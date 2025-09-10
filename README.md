@@ -51,6 +51,8 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    The application.properties file is located in the src/main/resources location in the project files.
 
+   The path in application.properties is set correctly, but it is still recommended to check to avoid errors.
+
    To avoid any error while finding the path, please set the path in application.properties like this:
 
    ```bash
