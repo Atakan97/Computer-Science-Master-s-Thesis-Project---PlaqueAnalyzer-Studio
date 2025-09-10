@@ -17,6 +17,8 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 1. **Clone the repository**
 
+   After downloading the project to the device, the location path of the project must be used with the cd command.
+
    ```bash
    git clone https://git.fim.uni-passau.de/sdbs/theses/students/mt-atakan-celik-code.git
    cd mt-atakan-celik-code
