@@ -1,6 +1,7 @@
 package com.project.plaque.plaque_calculator.service;
 
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.project.plaque.plaque_calculator.dto.DecomposeAllRequest;
 import com.project.plaque.plaque_calculator.dto.DecomposeAllResponse;
 import com.project.plaque.plaque_calculator.dto.DecomposeRequest;
@@ -8,6 +9,7 @@ import com.project.plaque.plaque_calculator.dto.DecomposeResponse;
 import com.project.plaque.plaque_calculator.model.FD;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Service;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -15,7 +17,6 @@ import java.util.stream.Collectors;
 public class DecomposeService {
 
 	private static final String HISTORY_SESSION_KEY = "decompositionHistory";
-
 	private final FDService fdService;
 	private final RicService ricService;
 	private final Gson gson = new Gson();
@@ -95,7 +96,7 @@ public class DecomposeService {
 				.collect(Collectors.toList());
 
 		// Response
-		DecomposeResponse resp = new DecomposeResponse(ric, fdsStr, dpPreserved, ljPreserved);
+		DecomposeResponse resp = new DecomposeResponse(ric, fdsStr);
 		System.out.println("DecomposeService.decompose: done -> " + resp);
 		return resp;
 	}
@@ -103,6 +104,7 @@ public class DecomposeService {
 	// DecomposeService.decomposeAll
 	public DecomposeAllResponse decomposeAll(DecomposeAllRequest req, HttpSession session) {
 		System.out.println("DecomposeService.decomposeAll: start");
+		System.out.println("decomposeAll req fds = " + req.getFds());
 
 		// original FDs & attrs
 		List<FD> originalFDs = getOriginalFDsOrThrow(session);
@@ -131,70 +133,130 @@ public class DecomposeService {
 			if (cols != null) unionColIdx.addAll(cols);
 		}
 
-		// Check if there are any missing original columns
+		// Check for missing original columns
 		int totalCols = originalAttrOrder.size();
 		List<Integer> missing = new ArrayList<>();
 		for (int i = 0; i < totalCols; i++) {
 			if (!unionColIdx.contains(i)) missing.add(i);
 		}
 		if (!missing.isEmpty()) {
-
-			throw new IllegalStateException("Missing columns in decomposed tables: " + missing.stream().map(Object::toString).collect(Collectors.joining(",")));
+			throw new IllegalStateException("Missing columns in decomposed tables: " +
+					missing.stream().map(Object::toString).collect(Collectors.joining(",")));
 		}
 
-		// Global ric calculation
-		// Make deterministic order: sort ascending
+		// deterministic ordered list of union columns
 		List<Integer> unionColsSorted = new ArrayList<>(unionColIdx);
 		Collections.sort(unionColsSorted);
 
-		// Decide manualData preference for global RIC:
-		// if request includes top-level manualData (DecomposeAllRequest), prefer that
-		// else fall back to ricService.computeRic(unionColsSorted, session)
-		double[][] globalRic;
-		if (req.getManualData() != null && !req.getManualData().isBlank()) {
-			// if DecomposeAllRequest supports a global manualData override
-			globalRic = ricService.computeRicFromManualData(req.getManualData());
-		} else {
-			// Use the data stored in session (initialCalcTableJson or originalTableJson inside RicService)
-			globalRic = ricService.computeRic(unionColsSorted, session);
-		}
+		// top-level FDs (normalized)
+		String topFds = req.getFds();
+		if (topFds == null) topFds = "";
+		topFds = topFds.replace("\u2192", "->").replace("→", "->")
+				.replaceAll("\\s*,\\s*", ",").replaceAll("\\s*->\\s*", "->")
+				.replaceAll("-+>", "->").trim();
 
-		// if computeRic returned empty matrix, signal to caller
-		if (globalRic == null) globalRic = new double[0][0];
-
-		// Per-table: projected FDs etc.
-		List<DecomposeResponse> perTableResponses = new ArrayList<>();
-		List<FD> combinedProjectedFds = new ArrayList<>();
-		LinkedHashSet<String> unionAttrNames = new LinkedHashSet<>();
-
+		// Build table attribute sets (mapped to attribute names) and canonicalize (ordering)
+		List<Set<String>> tableAttrSets = new ArrayList<>(tables.size());
 		for (DecomposeRequest dr : tables) {
 			List<Integer> cols = dr.getColumns() == null ? Collections.emptyList() : dr.getColumns();
-			Set<String> attrs = cols.stream()
-					.map(i -> originalAttrOrder.get(i))
+			// normalize indices (numbers)
+			List<Integer> colsNum = cols.stream().map(n -> n == null ? -1 : n).collect(Collectors.toList());
+
+			LinkedHashSet<String> attrs = colsNum.stream()
+					.map(i -> {
+						if (i < 0 || i >= originalAttrOrder.size()) {
+							throw new IllegalArgumentException("Column index out of range: " + i);
+						}
+						return originalAttrOrder.get(i);
+					})
+					// preserves insertion
 					.collect(Collectors.toCollection(LinkedHashSet::new));
 
-			// Project & minimize projected FDs
+			// canonicalize by sorting attribute names
+			List<String> tmp = new ArrayList<>(attrs);
+			Collections.sort(tmp);
+			LinkedHashSet<String> canonical = new LinkedHashSet<>(tmp);
+
+			tableAttrSets.add(canonical);
+		}
+
+		// unionAttrs = union of all table attributes (should equal originalAttrs if validated above)
+		LinkedHashSet<String> unionAttrs = new LinkedHashSet<>();
+		for (Set<String> s : tableAttrSets) unionAttrs.addAll(s);
+
+		// Build global manual rows, prefer top-level manualData if provided
+		List<String> manualRowsList = new ArrayList<>();
+		if (req.getManualData() != null && !req.getManualData().isBlank()) {
+			// dedupe preserving order
+			LinkedHashSet<String> set = new LinkedHashSet<>();
+			for (String part : req.getManualData().split(";", -1)) {
+				String p = part == null ? "" : part.trim();
+				if (!p.isEmpty()) set.add(p);
+			}
+			manualRowsList.addAll(set);
+		} else {
+			// build from session originalTuples using unionColsSorted
+			@SuppressWarnings("unchecked")
+			List<List<String>> originalTuples = (List<List<String>>) session.getAttribute("originalTuples");
+			if (originalTuples == null || originalTuples.isEmpty()) {
+				String origJson = (String) session.getAttribute("originalTableJson");
+				if (origJson != null && !origJson.isBlank()) {
+					try {
+						Type t = new TypeToken<List<List<String>>>(){}.getType();
+						originalTuples = gson.fromJson(origJson, t);
+						if (originalTuples == null) originalTuples = Collections.emptyList();
+					} catch (Exception ex) {
+						originalTuples = Collections.emptyList();
+					}
+				} else {
+					originalTuples = Collections.emptyList();
+				}
+			}
+			LinkedHashSet<String> seen = new LinkedHashSet<>();
+			for (List<String> row : originalTuples) {
+				List<String> picked = new ArrayList<>();
+				for (Integer colIdx : unionColsSorted) {
+					int i = colIdx == null ? -1 : colIdx;
+					String v = (i >= 0 && i < row.size()) ? row.get(i) : "";
+					picked.add(v == null ? "" : v);
+				}
+				String tup = String.join(",", picked);
+				if (!tup.isEmpty()) seen.add(tup);
+			}
+			manualRowsList.addAll(seen);
+		}
+
+		String builtManual = String.join(";", manualRowsList);
+		System.out.println("DecomposeService.decomposeAll: built manualData for global RIC = " + builtManual);
+		System.out.println("DecomposeService.decomposeAll: passing topFds = '" + topFds + "' to RicService");
+
+		// Compute global RIC, passing top-level fds if any)
+		double[][] globalRic = ricService.computeRicFromManualData(builtManual, topFds);
+		if (globalRic == null) globalRic = new double[0][0];
+
+		// Per-table: project & minimize FDs (still return projected FD lists per table)
+		List<DecomposeResponse> perTableResponses = new ArrayList<>();
+		List<FD> combinedProjectedFds = new ArrayList<>();
+
+		for (int i = 0; i < tables.size(); i++) {
+			Set<String> attrs = tableAttrSets.get(i);
+
+			// Project & minimize projected FDs for this table
 			List<FD> projected = projectFDsByClosure(attrs, originalFDs);
 			projected = minimizeLhsForFds(projected, originalFDs);
 
 			combinedProjectedFds.addAll(projected);
-			unionAttrNames.addAll(attrs);
 
-			// Per-table dp/lj checks
-			boolean dpPerTable = checkDependencyPreserving(originalFDs, projected);
-
-			Set<String> S = new LinkedHashSet<>(attrs);
-			Set<String> complement = new LinkedHashSet<>(originalAttrs);
-			complement.removeAll(S);
-			List<Set<String>> schemas = List.of(S, complement);
-			boolean ljPerTable = checkLosslessDecomposition(new LinkedHashSet<>(originalAttrOrder), schemas, originalFDs);
-
+			// Build response item with projected FDs only (no per-table dp/lj)
 			List<String> projectedStr = projected.stream().map(this::fdToString).collect(Collectors.toList());
-			DecomposeResponse drResp = new DecomposeResponse(new double[0][0], projectedStr, dpPerTable, ljPerTable);
+			DecomposeResponse drResp = new DecomposeResponse(new double[0][0], projectedStr);
 			perTableResponses.add(drResp);
+
+			System.out.println("DecomposeService.decomposeAll: per-table idx=" + i + " attrs=" + attrs +
+					" projected=" + projectedStr);
 		}
 
-		// global dp-preserved: does combinedProjectedFds imply originalFDs?
+		// global dp-preserved (combined projected FDs imply original)
 		Map<String, FD> uniq = new LinkedHashMap<>();
 		for (FD fd : combinedProjectedFds) {
 			String key = fd.getLhs().toString() + "->" + fd.getRhs().toString();
@@ -203,25 +265,26 @@ public class DecomposeService {
 		List<FD> combinedProjectedUnique = new ArrayList<>(uniq.values());
 		boolean dpPreservedGlobal = checkDependencyPreserving(originalFDs, combinedProjectedUnique);
 
-		// Building list of schema sets from incoming tables
-		List<Set<String>> schemaList = new ArrayList<>();
-		for (DecomposeRequest dr : tables) {
-			List<Integer> cols = dr.getColumns() == null ? Collections.emptyList() : dr.getColumns();
-			Set<String> attrsSet = cols.stream()
-					.map(i -> originalAttrOrder.get(i))
-					.collect(Collectors.toCollection(LinkedHashSet::new));
-			schemaList.add(attrsSet);
-		}
+		// Build schemaList deterministically
+		List<Set<String>> schemaList = tableAttrSets.stream()
+				.map(s -> new LinkedHashSet<>(s))
+				.collect(Collectors.toList());
+		schemaList.sort(Comparator.comparing(s -> String.join(",", s)));
+
 		boolean ljPreservedGlobal = checkLosslessDecomposition(new LinkedHashSet<>(originalAttrOrder), schemaList, originalFDs);
 
-		// Building response
+		System.out.println("DecomposeService.decomposeAll: dpPreservedGlobal=" + dpPreservedGlobal + " ljPreservedGlobal=" + ljPreservedGlobal);
+
+		// Build response
 		DecomposeAllResponse allResp = new DecomposeAllResponse();
 		allResp.setTableResults(perTableResponses);
 		allResp.setDpPreserved(dpPreservedGlobal);
 		allResp.setLjPreserved(ljPreservedGlobal);
 
-		// set global RIC matrix
+		// set global RIC matrix and manual rows (for frontend mapping) and unionCols
 		allResp.setGlobalRic(globalRic);
+		allResp.setGlobalManualRows(manualRowsList);
+		allResp.setUnionCols(unionColsSorted);
 
 		System.out.println("DecomposeService.decomposeAll: done");
 		return allResp;
@@ -248,68 +311,7 @@ public class DecomposeService {
 		// No capping — keep full history
 		session.setAttribute(HISTORY_SESSION_KEY, history);
 	}
-
-	/**
-	 * Undo last decomposition:
-	 * removes the last snapshot from history (the most recent)
-	 * returns Optional of the new current snapshot,
-	 * parsed as List<List<Integer>>. If nothing remains then returns Optional.empty()
-	 */
-	public Optional<List<List<Integer>>> undoLastDecomposition(HttpSession session) {
-		@SuppressWarnings("unchecked")
-		List<String> history = (List<String>) session.getAttribute(HISTORY_SESSION_KEY);
-		if (history == null || history.isEmpty()) {
-			return Optional.empty();
-		}
-		// remove last (the current)
-		history.remove(history.size() - 1);
-		session.setAttribute(HISTORY_SESSION_KEY, history);
-
-		if (history.isEmpty()) return Optional.of(Collections.emptyList());
-
-		String lastJson = history.get(history.size() - 1);
-		try {
-			// parse into List<List<Integer>>
-			List<?> parsed = gson.fromJson(lastJson, List.class);
-			List<List<Integer>> out = new ArrayList<>();
-			if (parsed != null) {
-				for (Object o : parsed) {
-					if (o instanceof List) {
-						List<?> inner = (List<?>) o;
-						List<Integer> row = new ArrayList<>();
-						for (Object item : inner) {
-							try {
-								Number n = (Number) item;
-								row.add(n.intValue());
-							} catch (ClassCastException cce) {
-								// try parse from string
-								try {
-									row.add(Integer.parseInt(String.valueOf(item)));
-								} catch (Exception e) { }
-							}
-						}
-						out.add(row);
-					}
-				}
-			}
-			return Optional.of(out);
-		} catch (Exception ex) {
-			// parsing failed
-			return Optional.empty();
-		}
-	}
-
-	public List<String> getDecompositionHistory(HttpSession session) {
-		@SuppressWarnings("unchecked")
-		List<String> history = (List<String>) session.getAttribute(HISTORY_SESSION_KEY);
-		if (history == null) return Collections.emptyList();
-		return new ArrayList<>(history);
-	}
-
-	public void clearDecompositionHistory(HttpSession session) {
-		session.removeAttribute(HISTORY_SESSION_KEY);
-	}
-
+	
 	// Helper methods
 	@SuppressWarnings("unchecked")
 	private List<FD> getOriginalFDsOrThrow(HttpSession session) {
@@ -404,7 +406,7 @@ public class DecomposeService {
 		return true;
 	}
 
-	// CHASE-based lossless join test
+	// lossless join test
 	private boolean checkLosslessDecomposition(Set<String> R, List<Set<String>> schemas, List<FD> originalFDs) {
 		if (R == null || R.isEmpty() || schemas == null || schemas.isEmpty()) return false;
 		List<String> attrs = new ArrayList<>(R);
@@ -543,7 +545,7 @@ public class DecomposeService {
 		// Just showing functional dependencies, no calculating ric so return 0
 		double[][] emptyRic = new double[0][0];
 
-		DecomposeResponse resp = new DecomposeResponse(emptyRic, fdsStr, dpPreserved, ljPreserved);
+		DecomposeResponse resp = new DecomposeResponse(emptyRic, fdsStr);
 		System.out.println("DecomposeService.projectFDsOnly: done -> " + resp);
 		return resp;
 	}

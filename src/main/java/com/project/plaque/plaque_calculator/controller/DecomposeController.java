@@ -9,7 +9,6 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.Map;
 
 @RestController
@@ -29,12 +28,6 @@ public class DecomposeController {
 			HttpSession session
 	) {
 		DecomposeResponse resp = decomposeService.decompose(req, session);
-
-		// Enforcing server-side due to lossless-join is mandatory when normalization
-		if (!resp.isLjPreserved()) {
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-					.body(Map.of("error", "Lossless-Join not preserved for selected columns"));
-		}
 
 		return ResponseEntity.ok(resp);
 	}

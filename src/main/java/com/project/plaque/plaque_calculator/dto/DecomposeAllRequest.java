@@ -2,29 +2,25 @@ package com.project.plaque.plaque_calculator.dto;
 
 import java.util.List;
 
-public class DecomposeRequest {
-
-	private String manualData;
-	private List<Integer> columns;
-	private String fds;
+/**
+ * Wrapper request to submit multiple DecomposeRequest objects (one per decomposed table).
+ * We reuse DecomposeRequest for per-table options (columns, manualData, flags).
+ */
+public class DecomposeAllRequest {
+	private List<DecomposeRequest> tables;
+	// optional global flags
 	private boolean losslessJoin;
 	private boolean dependencyPreserve;
 	private int timeLimit;
 	private boolean monteCarlo;
 	private int samples;
+	private String manualData;
+	private String fds;
 
-	// No-arg constructor
-	public DecomposeRequest() {}
+	public DecomposeAllRequest() {}
 
-	// Getters & Setters
-	public String getManualData() { return manualData; }
-	public void setManualData(String manualData) { this.manualData = manualData; }
-
-	public List<Integer> getColumns() { return columns; }
-	public void setColumns(List<Integer> columns) { this.columns = columns; }
-
-	public String getFds() { return fds; }
-	public void setFds(String fds) { this.fds = fds; }
+	public List<DecomposeRequest> getTables() { return tables; }
+	public void setTables(List<DecomposeRequest> tables) { this.tables = tables; }
 
 	public boolean isLosslessJoin() { return losslessJoin; }
 	public void setLosslessJoin(boolean losslessJoin) { this.losslessJoin = losslessJoin; }
@@ -40,4 +36,10 @@ public class DecomposeRequest {
 
 	public int getSamples() { return samples; }
 	public void setSamples(int samples) { this.samples = samples; }
+
+	public String getManualData() { return manualData; }
+	public void setManualData(String manualData) { this.manualData = manualData; }
+
+	public String getFds() { return fds; }
+	public void setFds(String fds) { this.fds = fds; }
 }

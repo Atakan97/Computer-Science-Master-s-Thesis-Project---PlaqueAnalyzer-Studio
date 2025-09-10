@@ -130,7 +130,7 @@
     <tbody>
     <tr th:each="row, rsStat : ${inputData.split(';')}">
       <td th:each="cell, csStat : ${row.split(',')}"
-          th:classappend="${ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0'} ? 'plaque-cell' : ''"
+          th:classappend="${(ricMatrix.size() > rsStat.index) and (ricMatrix[rsStat.index].length > csStat.index) and (ricMatrix[rsStat.index][csStat.index] != '1' and ricMatrix[rsStat.index][csStat.index] != '1.0')} ? 'plaque-cell' : ''"
           th:text="${cell}">val</td>
     </tr>
     </tbody>
@@ -140,7 +140,7 @@
   <table id="ricTable" class="data-grid" style="display:none">
     <thead>
     <tr>
-      <th th:each="i : ${#numbers.sequence(1, ricMatrix[0].length)}"
+      <th th:each="i : ${#numbers.sequence(1, ricColCount)}"
           th:text="${i}"></th>
     </tr>
     </thead>

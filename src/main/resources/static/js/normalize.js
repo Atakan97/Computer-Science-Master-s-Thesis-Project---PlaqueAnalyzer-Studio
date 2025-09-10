@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let elapsedSecs   = 0;
     let timerStarted  = false;
 
-    // Reset attempt counter on load (best-effort)
+    // Reset attempt counter on load
     fetch('/normalize/resetAttempt', { method: 'POST' })
         .then(() => { if (attemptEl) attemptEl.textContent = '0'; })
         .catch(err => console.error('Reset attempt failed', err));
@@ -143,22 +143,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!warningsArea) {
         warningsArea = document.createElement('div');
         warningsArea.id = 'normalizeWarnings';
-        warningsArea.style.marginTop = '10px';
+        // Basic styling (can be moved to CSS file)
+        warningsArea.style.margin = '16px 0 8px 0';
         warningsArea.style.display = 'none';
         warningsArea.style.background = '#fff7ed';
         warningsArea.style.border = '1px solid #ffd8b5';
-        warningsArea.style.padding = '10px';
+        warningsArea.style.padding = '12px';
         warningsArea.style.borderRadius = '6px';
         warningsArea.style.color = '#7a2e00';
-        // insert near computeAllBtn or addTableBtn
-        if (computeAllBtn && computeAllBtn.parentNode) {
+        warningsArea.style.width = '100%';
+        warningsArea.style.boxSizing = 'border-box';
+
+        // Insert *after* decomposed tables container so message appears below the decomposed tables
+        if (decContainer && decContainer.parentNode) {
+            // put warningsArea immediately after decContainer
+            decContainer.parentNode.insertBefore(warningsArea, decContainer.nextSibling);
+        } else if (computeAllBtn && computeAllBtn.parentNode) {
+            // fallback near compute button
             computeAllBtn.parentNode.insertBefore(warningsArea, computeAllBtn.nextSibling);
-        } else if (addTableBtn && addTableBtn.parentNode) {
-            addTableBtn.parentNode.insertBefore(warningsArea, addTableBtn.nextSibling);
         } else {
-            document.body.insertBefore(warningsArea, document.body.firstChild);
+            document.body.appendChild(warningsArea);
         }
     }
+
     function showWarning(html) {
         warningsArea.innerHTML = html;
         warningsArea.style.display = 'block';
@@ -166,6 +173,73 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearWarning() {
         warningsArea.innerHTML = '';
         warningsArea.style.display = 'none';
+    }
+
+    function showGlobalDpLj(dpFlag, ljFlag) {
+        // Build HTML used in the warningsArea
+        const parts = [];
+        if (dpFlag === true) {
+            parts.push('<p class="ok">✓ Dependency-Preserving provided!</p>');
+        } else {
+            parts.push('<p class="warning">⚠ Dependency-Preserving not provided!</p>');
+        }
+        if (ljFlag === true) {
+            parts.push('<p class="ok">✓ Lossless-Join provided!</p>');
+        } else {
+            parts.push('<p class="error">❌ Lossless-Join not provided!</p>');
+        }
+        showWarning(parts.join(''));
+        try { warningsArea.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    }
+
+    // parse projectedFds stored in wrapper.dataset.projectedFds
+    function parseProjectedFdsValue(val) {
+        if (!val) return [];
+        // if already an array-encoded JSON
+        if (typeof val === 'string') {
+            const trimmed = val.trim();
+            // try JSON.parse first
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    return parsed.map(String).filter(s => s && s.trim()).map(s => s.trim());
+                }
+            } catch (e) {
+                // not JSON then continue
+            }
+            // semicolon separated or newline separated list
+            const parts = trimmed.split(/[;\r\n]+/).map(s => s.trim()).filter(Boolean);
+            return parts;
+        }
+        if (Array.isArray(val)) {
+            return val.map(String).filter(s => s && s.trim()).map(s => s.trim());
+        }
+        return [];
+    }
+
+    // Collect projected FDs from a wrapper (returns array of strings)
+    function readProjectedFdsFromWrapper(wrapper) {
+        if (!wrapper) return [];
+        const raw = wrapper.dataset.projectedFds;
+        return parseProjectedFdsValue(raw);
+    }
+
+    // Merge arrays and remove duplicates while keeping order
+    function uniqConcat(arrays) {
+        const seen = new Set();
+        const out = [];
+        arrays.forEach(a => {
+            (a || []).forEach(x => {
+                if (!x) return;
+                const s = String(x).trim();
+                if (!s) return;
+                if (!seen.has(s)) {
+                    seen.add(s);
+                    out.push(s);
+                }
+            });
+        });
+        return out;
     }
 
     // fetchProjectedFDs, ask backend for projected FDs for given columns and store them in wrapper.dataset.projectedFds
@@ -224,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showFdsBtn.addEventListener('click', () => {
         const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
         if (wrappers.length === 0) {
-            alert('Henüz decomposed table yok.');
+            alert('No decomposed tables yet.');
             return;
         }
         wrappers.forEach(w => {
@@ -235,8 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // get stored projected FDs (computed earlier with fetchProjectedFDs at onAdd/onEnd)
             let proj = [];
             try {
-                proj = JSON.parse(w.dataset.projectedFds || '[]');
-                if (!Array.isArray(proj)) proj = [];
+                proj = readProjectedFdsFromWrapper(w);
             } catch (e) {
                 proj = [];
             }
@@ -287,18 +360,23 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Build tables payload (columns + manualData per wrapper)
+        // Build tables payload (columns + manualData per wrapper) and collect per-wrapper fds
         const tablesPayload = [];
+        const perTableFdsArrays = [];
+
         for (const w of wrappers) {
             let cols = [];
             try { cols = JSON.parse(w.dataset.columns || '[]'); } catch (e) { cols = []; }
+
+            // Build projected FDs for this wrapper (if precomputed)
+            const projFds = readProjectedFdsFromWrapper(w);
+            perTableFdsArrays.push(projFds || []);
+
             if (!cols || cols.length === 0) {
                 tablesPayload.push({
                     columns: [],
                     manualData: '',
-                    fds: '',
-                    losslessJoin: !!(losslessCheckbox && losslessCheckbox.checked),
-                    dependencyPreserve: !!(dependencyCheckbox && dependencyCheckbox.checked),
+                    fds: projFds.join(';'),
                     timeLimit: parseInt(timeLimitInput?.value || '30', 10),
                     monteCarlo: false,
                     samples: 0
@@ -322,21 +400,48 @@ document.addEventListener('DOMContentLoaded', () => {
             tablesPayload.push({
                 columns: cols,
                 manualData: manualData,
-                fds: '',
-                losslessJoin: !!(losslessCheckbox && losslessCheckbox.checked),
-                dependencyPreserve: !!(dependencyCheckbox && dependencyCheckbox.checked),
+                fds: projFds.join(';'),
                 timeLimit: parseInt(timeLimitInput?.value || '30', 10),
                 monteCarlo: false,
                 samples: 0
             });
         }
 
+        // Build top-level FD string:
+        // Priority: window.fdListWithClosure -> window.fdList -> merge per-table projected fds
+        let topLevelFdsArr = [];
+        try {
+            if (typeof window !== 'undefined') {
+                if (window.fdListWithClosure && String(window.fdListWithClosure).trim()) {
+                    // fdListWithClosure could be a string with separators ; or \n
+                    topLevelFdsArr = parseProjectedFdsValue(window.fdListWithClosure);
+                } else if (window.fdList && String(window.fdList).trim()) {
+                    topLevelFdsArr = parseProjectedFdsValue(window.fdList);
+                }
+            }
+        } catch (e) {
+            topLevelFdsArr = [];
+        }
+
+        if (topLevelFdsArr.length === 0) {
+            // fallback: merge per-table projected fds
+            topLevelFdsArr = uniqConcat(perTableFdsArrays);
+        }
+
+        // final top-level fd string
+        const topLevelFdsString = topLevelFdsArr.join(';');
+
+        // If there are no FDs even now, still submit,
+        // but sending top-level empty string would cause ric main to report "FDs: none".
+        // So we send whatever we have.
+        const bodyObj = { tables: tablesPayload, fds: topLevelFdsString };
+
         startTimer();
         try {
             const resp = await fetch('/normalize/decompose-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tables: tablesPayload })
+                body: JSON.stringify(bodyObj)
             });
 
             if (!resp.ok) {
@@ -348,33 +453,63 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const json = await resp.json();
-
-            // Ensure ljPreserved is true (server-side should enforce this, but double-check)
-            if (!json.ljPreserved) {
-                alert('Decomposition is not lossless. Fix decomposition before computing RIC.');
-                stopTimer();
-                return;
-            }
+            const globalDp = Boolean(json.dpPreserved);
+            const globalLj = Boolean(json.ljPreserved);
+            showGlobalDpLj(globalDp, globalLj);
 
             // globalRic and tableResults are expected
             const globalRic = Array.isArray(json.globalRic) ? json.globalRic : [];
             const tableResults = Array.isArray(json.tableResults) ? json.tableResults : [];
 
-            // Reconstruct unionColsSorted same as server (sorted ascending)
-            const unionCols = Array.from(new Set([].concat(...tablesPayload.map(t => t.columns))));
-            unionCols.sort((a,b) => a - b);
+            // update per-wrapper FD list using server-returned tableResults.projectedFDs (if present)
+            // This ensures UI shows authoritative projected FDs from server
+            const wrappersList = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+            for (let i = 0; i < wrappersList.length; i++) {
+                const w = wrappersList[i];
+                const fdContainer = w.querySelector('.fd-list-container');
+                const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
+                if (!fdUl) continue;
+                fdUl.innerHTML = '';
+                const tr = tableResults[i] || {};
+                const projList = Array.isArray(tr.projectedFDs) ? tr.projectedFDs : (tr.projectedFDs === undefined ? [] : tr.projectedFDs);
+                // fallback: if server didn't provide, keep wrapper.dataset.projectedFds
+                const listToUse = (projList && projList.length > 0) ? projList : readProjectedFdsFromWrapper(w);
+                listToUse.forEach(s => {
+                    const li = document.createElement('li');
+                    li.textContent = s;
+                    fdUl.appendChild(li);
+                });
+                // Also store back to dataset for future usage
+                try { w.dataset.projectedFds = JSON.stringify(listToUse); } catch (e) {}
+            }
 
-            // Build first-occurrence map per wrapper: map unique tuple -> first original-row index
+            // Use server-provided unionCols if present, else fallback
+            let unionCols = Array.isArray(json.unionCols) && json.unionCols.length > 0
+                ? json.unionCols.map(n => Number(n))
+                : Array.from(new Set([].concat(...tablesPayload.map(t => t.columns)))).map(n => Number(n));
+            unionCols.sort((a,b)=>a-b);
+
+            // globalManualRows: each element is a comma-separated tuple in the same order as unionCols
+            const globalManualRows = Array.isArray(json.globalManualRows) ? json.globalManualRows.map(s => String(s)) : [];
+
+            // Build unionManualTuples: array of arrays of strings aligned with unionCols
+            const unionManualTuples = globalManualRows.map(s => s.split(',').map(x => (x==null? '' : String(x).trim())));
+
+            // Build per-wrapper first-occurrence maps (projected tuple -> index in unionManualTuples)
             const wrapperFirstIndexMaps = [];
             for (const t of tablesPayload) {
-                const cols = t.columns || [];
-                const firstMap = new Map();
-                for (let r = 0; r < originalRows.length; r++) {
-                    const row = originalRows[r];
-                    const tup = cols.map(i => (row[i] !== undefined ? String(row[i]) : '')).join('|');
-                    if (!firstMap.has(tup)) firstMap.set(tup, r);
+                const cols = Array.isArray(t.columns) ? t.columns.map(Number) : [];
+                const map = new Map();
+                for (let r = 0; r < unionManualTuples.length; r++) {
+                    const unionRow = unionManualTuples[r];
+                    const projectedParts = cols.map(c => {
+                        const pos = unionCols.indexOf(Number(c)); // position of this column in unionCols
+                        return (pos >= 0 && unionRow[pos] !== undefined) ? unionRow[pos] : '';
+                    });
+                    const key = projectedParts.join('|');
+                    if (!map.has(key)) map.set(key, r);
                 }
-                wrapperFirstIndexMaps.push(firstMap);
+                wrapperFirstIndexMaps.push(map);
             }
 
             // Render per-wrapper table bodies using globalRic
@@ -387,22 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Clear previous warning & FD list
                 if (warnDiv) warnDiv.innerHTML = '';
 
-                // Show dp/lj per-table if provided
-                const trRes = tableResults[i] || {};
-                if (warnDiv) {
-                    if (trRes.dpPreserved === false) {
-                        const p = document.createElement('p'); p.className = 'warning'; p.innerHTML = '⚠ Dependency-Preserving not provided!'; warnDiv.appendChild(p);
-                    } else if (trRes.dpPreserved === true) {
-                        const p = document.createElement('p'); p.className = 'ok'; p.innerHTML = '✓ Dependency-Preserving provided!'; warnDiv.appendChild(p);
-                    }
-                    if (trRes.ljPreserved === false) {
-                        const p = document.createElement('p'); p.className = 'error'; p.innerHTML = '❌ Lossless-Join not provided for this table!'; warnDiv.appendChild(p);
-                    } else if (trRes.ljPreserved === true) {
-                        const p = document.createElement('p'); p.className = 'ok'; p.innerHTML = '✓ Lossless-Join provided!'; warnDiv.appendChild(p);
-                    }
-                }
-
-                // Build uniqueTuples for this wrapper (same dedupe logic used when building manualData)
+                // Build uniqueTuples for this wrapper
                 const seen = new Set();
                 const uniqueTuples = [];
                 originalRows.forEach(row => {
@@ -423,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     for (let r = 0; r < uniqueTuples.length; r++) {
                         const tr = tbody.insertRow();
                         const tupArr = uniqueTuples[r];
-                        // find global row index via first-occurrence map
+                        // find global row index with first-occurrence map
                         const key = tupArr.join('|');
                         const firstMap = wrapperFirstIndexMaps[i];
                         const globalRowIdx = firstMap.has(key) ? firstMap.get(key) : -1;
@@ -470,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Helper function to create a new decomposed table
-    // NOTE: returns the created wrapper so it can be restored by undo logic
+    // returns the created wrapper so it can be restored by undo logic
     function createDecomposedTable() {
         // Checking the exist wrapper numbers
         let allWrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
@@ -496,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Content container (table + FD list side-by-side)
         const content = document.createElement('div');
-        content.classList.add('decomposed-content'); // style this in CSS
+        content.classList.add('decomposed-content');
         wrapper.appendChild(content);
 
         const leftCol = document.createElement('div');
@@ -730,103 +850,6 @@ document.addEventListener('DOMContentLoaded', () => {
         addTableBtn.addEventListener('click', () => createDecomposedTable());
     }
 
-    // Function for compute RIC for single wrapper (kept for potential single-table usage)
-    async function computeRicForWrapper(wrapper) {
-        // read columns stored
-        let cols = [];
-        try { cols = JSON.parse(wrapper.dataset.columns || '[]'); } catch (e) { cols = []; }
-        if (!cols || cols.length === 0) {
-            return;
-        }
-
-        // Locate elements in wrapper
-        const fdContainer = wrapper.querySelector('.fd-list-container');
-        const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
-        const warnDiv = wrapper.querySelector('.decompose-warnings');
-        const tbody = wrapper.querySelector('table tbody');
-
-        // Build unique tuples and manualData
-        const seen = new Set();
-        const uniqueTuples = [];
-        const manualRows = [];
-        originalRows.forEach(row => {
-            const tupArr = cols.map(i => (row[i] !== undefined ? String(row[i]) : ''));
-            const key = tupArr.join('|');
-            if (!seen.has(key)) {
-                seen.add(key);
-                uniqueTuples.push(tupArr);
-                manualRows.push(tupArr.join(','));
-            }
-        });
-        const manualData = manualRows.join(';');
-
-        const payload = {
-            manualData,
-            columns: cols,
-            fds: '',
-            losslessJoin: !!(losslessCheckbox && losslessCheckbox.checked),
-            dependencyPreserve: !!(dependencyCheckbox && dependencyCheckbox.checked),
-            timeLimit: parseInt(timeLimitInput?.value || '30', 10),
-            monteCarlo: false,
-            samples: 0
-        };
-
-        try {
-            const resp = await fetch('/normalize/decompose', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!resp.ok) {
-                const txt = await resp.text();
-                throw new Error(txt || resp.statusText);
-            }
-            const result = await resp.json();
-
-            // Show dp / lj warnings
-            if (warnDiv) warnDiv.innerHTML = '';
-            if (result.dpPreserved === false) {
-                const p = document.createElement('p'); p.className = 'warning'; p.innerHTML = '⚠ Dependency-Preserving not provided!'; warnDiv.appendChild(p);
-            } else if (result.dpPreserved === true) {
-                const p = document.createElement('p'); p.className = 'ok'; p.innerHTML = '✓ Dependency-Preserving provided!'; warnDiv.appendChild(p);
-            }
-            if (result.ljPreserved === false) {
-                const p = document.createElement('p'); p.className = 'error'; p.innerHTML = '❌ Lossless-Join not provided! Decomposition will not be approved!'; warnDiv.appendChild(p);
-            } else if (result.ljPreserved === true) {
-                const p = document.createElement('p'); p.className = 'ok'; p.innerHTML = '✓ Lossless-Join provided!'; warnDiv.appendChild(p);
-            }
-
-            // If backend returned ricMatrix, render with mapping to uniqueTuples
-            if (result.ricMatrix && Array.isArray(result.ricMatrix) && result.ricMatrix.length > 0 && tbody) {
-                tbody.innerHTML = '';
-                for (let r = 0; r < uniqueTuples.length; r++) {
-                    const tr = tbody.insertRow();
-                    for (let c = 0; c < cols.length; c++) {
-                        const td = tr.insertCell();
-                        td.textContent = uniqueTuples[r][c];
-                        const ricVal = parseFloat(result.ricMatrix[r]?.[c]);
-                        if (!isNaN(ricVal) && ricVal < 1) {
-                            td.classList.add('plaque-cell');
-                            const lightness = 10 + 90 * ricVal;
-                            td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
-                        } else {
-                            td.style.backgroundColor = 'white';
-                            td.classList.remove('plaque-cell');
-                        }
-                        td.dataset.origIdx = cols[c];
-                    }
-                }
-            }
-
-        } catch (err) {
-            console.error('computeRicForWrapper failed', err);
-            if (warnDiv) {
-                warnDiv.innerHTML = '';
-                const p = document.createElement('p'); p.className = 'error'; p.textContent = 'Error during calculation: ' + (err.message || err); warnDiv.appendChild(p);
-            }
-        }
-    }
-
     // Undo / restore logic
     undoBtn.addEventListener('click', async () => {
         if (!confirm('Undo last decomposition? This will restore the previous decomposition state.')) return;
@@ -843,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('No earlier decomposition snapshot available to restore.');
                 return;
             }
-            // last snapshot (current after pop) is at history[history.length - 1]
+            // last snapshot (current after pop) is at history
             const lastJson = history[history.length - 1];
             let snapshot;
             try {

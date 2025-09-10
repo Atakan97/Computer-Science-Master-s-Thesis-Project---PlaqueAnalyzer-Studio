@@ -1,5 +1,6 @@
 package com.project.plaque.plaque_calculator.dto;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -10,8 +11,13 @@ public class DecomposeAllResponse {
 	private List<DecomposeResponse> tableResults;
 	private boolean dpPreserved;   // overall
 	private boolean ljPreserved;   // overall
-	// optional: list of missing column indices (0-based) if any
+	// list of missing column indices (0-based) if any
 	private List<Integer> missingColumns;
+	private List<String> globalManualRows = new ArrayList<>();
+	//  order used to build globalManualRows / globalRic columns
+	private List<Integer> unionCols = new ArrayList<>();
+
+
 
 	public DecomposeAllResponse() {}
 
@@ -29,4 +35,11 @@ public class DecomposeAllResponse {
 
 	public List<Integer> getMissingColumns() { return missingColumns; }
 	public void setMissingColumns(List<Integer> missingColumns) { this.missingColumns = missingColumns; }
+
+	public List<String> getGlobalManualRows() { return globalManualRows;}
+	public void setGlobalManualRows(List<String> rows) { this.globalManualRows = rows == null ? new ArrayList<>() : rows; }
+
+	public List<Integer> getUnionCols() { return unionCols; }
+	public void setUnionCols(List<Integer> unionCols) { this.unionCols = unionCols == null ? new ArrayList<>() : unionCols; }
 }
+

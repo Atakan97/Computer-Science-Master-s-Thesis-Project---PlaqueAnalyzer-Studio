@@ -41,7 +41,7 @@ public class PageController {
 		String fdList = (String) session.getAttribute("fdList");
 		String fdWithClosure = (String) session.getAttribute("fdListWithClosure");
 
-		// Normalize user list into a set for comparison (no spaces, arrow ->)
+		// Normalize user list into a set for comparison (no spaces, arrow)
 		Set<String> userFds = new LinkedHashSet<>();
 		if (fdList != null && !fdList.isBlank()) {
 			String[] parts = fdList.split("[;\\r\\n]+");
@@ -86,6 +86,6 @@ public class PageController {
 			history.remove(history.size() - 1); // remove last state
 		}
 		session.setAttribute("decompositionHistory", history);
-		return history; // return updated history (as JSON)
+		return history; // return updated history, as JSON
 	}
 }
