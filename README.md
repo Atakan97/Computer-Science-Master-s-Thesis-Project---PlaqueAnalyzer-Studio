@@ -19,8 +19,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
    ```bash
    git clone https://git.fim.uni-passau.de/sdbs/theses/students/mt-atakan-celik-code.git
-   cd plaque‑calculator‑app
-
+   cd mt-atakan-celik-code
 
 2. **Check that the external RIC JAR is available** 
 
@@ -47,7 +46,9 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
    mvn -DskipTests package
 
    
-4. **Check that application.properties file has corrent path**
+4. **Check that application.properties file has correct path**
+
+   The application.properties file is located in the src/main/resources location in the project files.
 
    To avoid any error while finding the path, please set the path in application.properties like this:
 
