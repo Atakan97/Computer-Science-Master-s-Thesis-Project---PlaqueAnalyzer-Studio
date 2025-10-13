@@ -80,6 +80,7 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
    ```
 
    Create database user and password (In the application.properties file, username: plaque_user and password: user123)
+   
    Important Note: If the database will be used with a different username and password, these must be specified in the project's application.properties file.
 
    ```sql
