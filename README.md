@@ -93,6 +93,24 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
    GRANT ALL PRIVILEGES ON DATABASE plaque_db TO plaque_user;
    ```
 
+## Running Project (with using Docker)
+
+1. **Install Docker Desktop**
+
+   Docker Desktop (https://www.docker.com/products/docker-desktop/) must be installed and running on the computer.
+
+2. **Go to Project Folder in the terminal and Run Docker Compose command**
+
+   After navigating to the project directory in the terminal, run the following command.
+
+   ```bash
+    docker-compose up --build
+    ```
+
+   This command will create the project image, download the required PostgreSQL database, and start both the application and the database.
+
+   The first run may take a few minutes, depending on your internet speed.
+
 ## Running Project
 
 1. **Build**
