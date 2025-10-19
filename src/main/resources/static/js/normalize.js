@@ -411,6 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const crFds = normalizeWindowArray(crFdsRaw);
 
         restoreMode = Array.isArray(crCols) && crCols.length > 0;
+        console.log('restoreMode?', restoreMode, { crColsRaw, crManualRaw, crFdsRaw, crCols, crManual, crFds });
 
         if (restoreMode) {
 
@@ -481,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Gruplar arasına boşluk eklemek için bu değeri kullan
                 relationGroup.style.marginRight = '30px';
 
-
+                console.log('Restoring table', i, {colsEntry, manualStr, fdsStr});
                 // Create wrapper in origMode so it behaves as "original replacement"
                 let w;
                 try {
@@ -492,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         initialManualData: manualStr,
                         initialFds: fdsStr,
                     });
-
+                    console.log('Restored wrapper', i, w);
                     // Finalize the header assignment: Relation R1, R2, ...
                     const titleElement = w.querySelector('h3');
                     if(titleElement) {
@@ -939,8 +940,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (allChecksResult.rawResponse) {
                 renderDpLjStatus(allChecksResult.rawResponse);
             }
-
-
             // Locking after successful check
             lockDecomposedTables();
 

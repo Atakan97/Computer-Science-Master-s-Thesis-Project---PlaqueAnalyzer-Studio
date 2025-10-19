@@ -9,7 +9,14 @@ import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
 import java.io.*;
 import java.nio.file.*;
-import java.util.*;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -32,6 +39,29 @@ public class RicService {
 
 	public RicService() {
 		// ricJarPath injected by Spring, init in @PostConstruct
+	}
+
+	private static record RicAttempt(boolean monteCarlo, int samples, int timeoutSeconds) { }
+
+	public record RicComputationResult(double[][] matrix, String finalStrategy, List<String> steps) { }
+
+	public static class RicComputationException extends RuntimeException {
+		private final List<String> steps;
+
+		public RicComputationException(String message, List<String> steps, Throwable cause) {
+			super(message, cause);
+			this.steps = steps == null ? List.of() : List.copyOf(steps);
+		}
+
+		public List<String> getSteps() {
+			return steps;
+		}
+	}
+
+	private static class RicTimeoutException extends RuntimeException {
+		RicTimeoutException(String message) {
+			super(message);
+		}
 	}
 
 	@PostConstruct
@@ -71,24 +101,112 @@ public class RicService {
 		return computeRicFromManualData(manualData);
 	}
 
-	// one-arg version (API that front-end calls)
+	// One-arg version (API that front-end calls)
 	public double[][] computeRicFromManualData(String manualData) {
-		// default: no fds, no monteCarlo
+		// Default: no FDs, no Monte Carlo
 		return computeRicFromManualData(manualData, "", false, 0);
 	}
 
-	// double-arg version (manual data + top-level fds)
+	// Double-arg version (manual data + top-level fds)
 	public double[][] computeRicFromManualData(String manualEncoded, String topLevelFds) {
 		return computeRicFromManualData(manualEncoded, topLevelFds, false, 0);
 	}
-
 	// (manual data + fds + monteCarlo flag + samples)
 	public double[][] computeRicFromManualData(String manualEncoded, String topLevelFds, boolean monteCarlo, int samples) {
 		return computeRicFromManualDataInternal(manualEncoded, topLevelFds, /*timeLimitSeconds*/30, monteCarlo, samples);
 	}
 
+	/**
+	 * Compute the RIC matrix with an adaptive feature: start with the user's input,
+	 * then proceed decreasing Monte Carlo sample sizes when timeouts occur. Each attempt is
+	 * tracked in the app, so the UI can show progress to the user.
+	 */
+	public RicComputationResult computeRicAdaptive(String manualEncoded, String topLevelFds,
+												    boolean initialMonteCarlo, int initialSamples) {
+		List<RicAttempt> attempts = buildAttempts(initialMonteCarlo, initialSamples);
+		List<String> steps = new ArrayList<>();
+		RuntimeException lastException = null;
+
+		for (RicAttempt attempt : attempts) {
+			String description = describeAttempt(attempt);
+			steps.add("Starting " + description + ".");
+			long startNs = System.nanoTime();
+			try {
+				double[][] matrix = computeRicFromManualDataInternal(
+						manualEncoded,
+						topLevelFds,
+						attempt.timeoutSeconds(),
+						attempt.monteCarlo(),
+						attempt.samples()
+				);
+				long elapsedMs = Duration.ofNanos(System.nanoTime() - startNs).toMillis();
+				steps.add("Completed " + description + " in " + formatDuration(elapsedMs) + ".");
+				return new RicComputationResult(matrix, description, List.copyOf(steps));
+			} catch (RicTimeoutException timeout) {
+				steps.add("Timed out while " + description + " after " + attempt.timeoutSeconds() + " seconds; moving on to the next stage.");
+				lastException = timeout;
+			} catch (RuntimeException ex) {
+				steps.add("Failed while " + description + ": " + ex.getMessage());
+				throw new RicComputationException("RIC computation failed during " + description, List.copyOf(steps), ex);
+			}
+		}
+
+		throw new RicComputationException(
+				"RIC computation did not finish after fallback strategies",
+				List.copyOf(steps),
+				lastException
+		);
+	}
+
+	/**
+	 * Building the ordered list of strategies will be applied for the computation. Duplicates are filtered out so that
+	 * the same Monte Carlo configuration will never be tried twice.
+	 */
+	private List<RicAttempt> buildAttempts(boolean initialMonteCarlo, int initialSamples) {
+		List<RicAttempt> attempts = new ArrayList<>();
+		Set<String> seen = new LinkedHashSet<>();
+
+		int normalizedInitialSamples = initialMonteCarlo ? Math.max(initialSamples, 1) : 0;
+		addAttempt(attempts, seen, new RicAttempt(initialMonteCarlo, normalizedInitialSamples, 10));
+		addAttempt(attempts, seen, new RicAttempt(true, 100_000, 10));
+		addAttempt(attempts, seen, new RicAttempt(true, 10_000, 10));
+		addAttempt(attempts, seen, new RicAttempt(true, 1_000, 10));
+
+		return attempts;
+	}
+
+	/**
+	 * Function that processes attempt configurations. Based on Monte Carlo approximation and
+	 * sample count, since the timeout is adjusted to 10 seconds for every attempt.
+	 */
+	private void addAttempt(List<RicAttempt> attempts, Set<String> seen, RicAttempt attempt) {
+		String key = attempt.monteCarlo() + "#" + attempt.samples();
+		if (seen.add(key)) {
+			attempts.add(attempt);
+		}
+	}
+
+	// Producing a short summary for logging/UI to user.
+	private String describeAttempt(RicAttempt attempt) {
+		if (!attempt.monteCarlo()) {
+			return "computed with exact values";
+		}
+		return "computed Monte Carlo approximation with " + String.format(Locale.US, "%,d", attempt.samples()) + " samples";
+	}
+
+	private String formatDuration(long elapsedMs) {
+		if (elapsedMs < 1000) {
+			return elapsedMs + " ms";
+		}
+		return String.format(Locale.US, "%.2f s", elapsedMs / 1000.0);
+	}
+
+	/**
+	 * Core implementation function that prepares the external process call, enforces a timeout and parses
+	 * the resulting ric matrix.
+	 */
 	private double[][] computeRicFromManualDataInternal(String manualEncoded, String topLevelFds,
-														int timeLimitSeconds, boolean monteCarlo, int samples) {
+															int timeLimitSeconds, boolean monteCarlo, int samples) {
 		if (manualEncoded == null) manualEncoded = "";
 		manualEncoded = manualEncoded.trim();
 
@@ -96,7 +214,9 @@ public class RicService {
 			throw new IllegalStateException("RIC jar not found at: " + ricJar.toAbsolutePath());
 		}
 
-		Path outFile;
+		Path outFile = null;
+		Process process = null;
+		Thread outputReader = null;
 		try {
 			outFile = Files.createTempFile("ric-out-", ".csv");
 		} catch (IOException e) {
@@ -108,7 +228,7 @@ public class RicService {
 		args.add("-jar");
 		args.add(ricJar.toAbsolutePath().toString());
 
-		// passing encoded table as single arg
+		// Passing encoded table as single arg
 		args.add(manualEncoded);
 
 		args.add("-e");
@@ -119,18 +239,18 @@ public class RicService {
 		args.add("-s");
 
 
-		// adding monte carlo option
+		// Adding Monte Carlo approximation option
 		if (monteCarlo) {
 			args.add("-r");
 			args.add(String.valueOf(samples));
 		}
 
-		// normalize and split FDs
+		// Normalize and split FDs
 		List<String> fdsList = new ArrayList<>();
 		if (topLevelFds != null && !topLevelFds.trim().isEmpty()) {
-			// normalize some arrow symbols to simple ASCII form then split
+			// Normalize some arrow symbols to simple ASCII form then split
 			String norm = topLevelFds.replace('→', '-').replace("—", "-");
-			// split on semicolon or newline
+			// Split on semicolon or newline
 			String[] fdParts = norm.split("[;\\r\\n]+");
 			for (String seg : fdParts) {
 				String tok = seg == null ? "" : seg.trim();
@@ -147,27 +267,38 @@ public class RicService {
 
 		StringBuilder procOutput = new StringBuilder();
 		try {
-			Process p = pb.start();
+			process = pb.start();
+			final Process procRef = process;
 
-			try (BufferedReader in = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-				String line;
-				while ((line = in.readLine()) != null) {
-					procOutput.append(line).append(System.lineSeparator());
+			Thread reader = new Thread(() -> {
+				try (BufferedReader in = new BufferedReader(new InputStreamReader(procRef.getInputStream()))) {
+					String line;
+					while ((line = in.readLine()) != null) {
+						procOutput.append(line).append(System.lineSeparator());
+					}
+					// Ignore stream read issues
+				} catch (IOException ignore) {
+
 				}
-			}
+			});
+			reader.setDaemon(true);
+			reader.start();
+			outputReader = reader;
 
-			boolean finished = p.waitFor(Math.max(60, timeLimitSeconds + 30), TimeUnit.SECONDS);
+			boolean finished = process.waitFor(Math.max(1, timeLimitSeconds), TimeUnit.SECONDS);
 			if (!finished) {
-				p.destroyForcibly();
-				throw new RuntimeException("RIC process timed out");
+				process.destroyForcibly();
+				reader.join(Math.min(TimeUnit.SECONDS.toMillis(timeLimitSeconds), 2000));
+				throw new RicTimeoutException("RIC process timed out after " + timeLimitSeconds + " seconds");
 			}
-			int exit = p.exitValue();
+			reader.join(TimeUnit.SECONDS.toMillis(2));
+			int exit = process.exitValue();
 			if (exit != 0) {
 				throw new RuntimeException("RIC process exited with code " + exit + ". Output:\n" + procOutput.toString());
 			}
 
 			if (!Files.exists(outFile)) {
-				// fallback to stdout parsing
+				// Fallback to stdout parsing
 				return parseRicFromStdout(procOutput.toString());
 			}
 
@@ -185,8 +316,8 @@ public class RicService {
 					if (tok == null || tok.isBlank()) continue;
 					try {
 						vals.add(Double.parseDouble(tok));
+						// Skip non-numeric tokens
 					} catch (NumberFormatException nfe) {
-						// skip non-numeric tokens
 					}
 				}
 				if (!vals.isEmpty()) {
@@ -213,12 +344,32 @@ public class RicService {
 					out[r] = rr;
 				}
 			}
-
-			try { Files.deleteIfExists(outFile); } catch (IOException ignore) {}
 			return out;
 
-		} catch (IOException | InterruptedException ex) {
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException("RIC process was interrupted", ex);
+		} catch (IOException ex) {
 			throw new RuntimeException("Failed to execute RIC jar: " + procOutput.toString(), ex);
+		} finally {
+			if (outputReader != null && outputReader.isAlive()) {
+				outputReader.interrupt();
+				try {
+					outputReader.join(200);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+				}
+			}
+			if (process != null && process.isAlive()) {
+				process.destroyForcibly();
+			}
+			try {
+				if (outFile != null) {
+					Files.deleteIfExists(outFile);
+				}
+			} catch (IOException ignore) {
+				// ignore cleanup failure
+			}
 		}
 	}
 

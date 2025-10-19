@@ -10,15 +10,22 @@
 <form th:action="@{/calc}" method="get" class="return-to-input-form">
   <input type="hidden" name="inputData" th:value="${inputData}" />
   <input type="hidden" name="fdList" th:value="${fdList}" />
-  <button type="submit" class="small">← Return to Input</button>
+  <button type="submit" class="button pill">← Return to Input</button>
 </form>
 
-<h1>Calculation Results</h1>
+<h1 class="results-heading">Calculation Results</h1>
+
+<div class="ric-status" th:if="${ricSteps != null and !ricSteps.isEmpty()}">
+  <h3 class="status-heading">Computation Status</h3>
+  <ul>
+    <li th:each="step : ${ricSteps}" th:text="${step}">Status message</li>
+  </ul>
+</div>
 
 <div class="results-container" style="max-width: 1200px; margin: 0 auto; padding: 20px;">
 
   <div th:if="${fdList != null and fdList != ''}" id="fdListSection">
-    <h3>Functional Dependencies:</h3>
+    <h3 class="result-section-title">Functional Dependencies:</h3>
     <ul id="fdListUl">
       <li th:each="fd : ${fdList.split(';')}" th:text="${fd}">X->Y</li>
     </ul>
@@ -31,7 +38,7 @@
 
   <div class="tables-side-by-side">
     <div th:if="${inputData != null}" class="table-wrapper">
-      <h3>Input Data:</h3>
+      <h3 class="result-section-title">Input Data:</h3>
       <table class="data-grid">
         <thead>
         <tr>
@@ -49,7 +56,7 @@
     </div>
 
     <div th:if="${ricMatrix != null}" class="table-wrapper" style="margin-bottom: 30px;">
-      <h3>Calculation Results:</h3>
+      <h3 class="result-section-title">Calculation Results:</h3>
 
       <table id="initialCalcTable" class="data-grid">
         <thead>

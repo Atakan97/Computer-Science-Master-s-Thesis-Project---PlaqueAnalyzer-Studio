@@ -38,24 +38,25 @@
   <div class="main-normalization-flex">
 
     <div class="original-table-wrapper">
+
+      <div id="fdListContainer" th:if="${fdItems.size()} > 0" class="fd-inline-panel">
+
+        <button id="showClosureNormBtn"
+                th:if="${transitiveFdStrings != null and !transitiveFdStrings.isEmpty()}"
+                class="small"
+                style="margin-bottom: 10px;">Show Transitive Closure FDs</button>
+
+        <h4>Functional Dependencies</h4>
+        <ul id="fdListUl">
+          <li th:each="fd : ${fdItems}"
+              th:text="${fd}"
+              th:classappend="${fdInferred.contains(fd)} ? 'inferred' : ''">
+          </li>
+        </ul>
+      </div>
       <h3>Original Table:</h3>
+
       <div id="originalTableContainer"></div>
-    </div>
-
-    <div id="fdListContainer" th:if="${fdItems.size()} > 0">
-
-      <button id="showClosureNormBtn"
-              th:if="${transitiveFdStrings != null and !transitiveFdStrings.isEmpty()}"
-              class="small"
-              style="margin-bottom: 10px;">Show Transitive Closure FDs</button>
-
-      <h4>Functional Dependencies</h4>
-      <ul id="fdListUl">
-        <li th:each="fd : ${fdItems}"
-            th:text="${fd}"
-            th:classappend="${fdInferred.contains(fd)} ? 'inferred' : ''">
-        </li>
-      </ul>
     </div>
 
   </div> <div class="orig-with-add">

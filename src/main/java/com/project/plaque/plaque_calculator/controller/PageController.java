@@ -20,8 +20,9 @@ public class PageController {
 	private final NormalizationController normalizationController;
 	private final FDService fdService;
 	private final Gson gson = new Gson();
+	private static final String RESTORE_SESSION_KEY = "normalizationRestoreState";
 
-	public PageController(NormalizationController normalizationController, FDService fdService) { // YENİ EKLENDİ
+	public PageController(NormalizationController normalizationController, FDService fdService) {
 		this.normalizationController = normalizationController;
 		this.fdService = fdService;
 	}
@@ -87,9 +88,29 @@ public class PageController {
 		boolean canReturn = history != null && !history.isEmpty();
 		model.addAttribute("canReturn", canReturn);
 
-		if (history != null && !history.isEmpty()) {
+		@SuppressWarnings("unchecked")
+		Map<String, Object> restoreState = (Map<String, Object>) session.getAttribute(RESTORE_SESSION_KEY);
+		Object restoreFlag = session.getAttribute("usingDecomposedAsOriginal");
+		boolean restoreRequested = restoreFlag instanceof Boolean && (Boolean) restoreFlag && restoreState != null;
+		System.out.println("[PageController] normalizePage - restoreRequested=" + restoreRequested + ", historySize=" + (history == null ? 0 : history.size()));
+
+		if (restoreRequested) {
+			System.out.println("[PageController] Using restoreState: " + gson.toJson(restoreState));
+			model.addAttribute("currentRelationsManualJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
+			model.addAttribute("currentRelationsColumnsJson", gson.toJson(restoreState.getOrDefault("columnsPerTable", Collections.emptyList())));
+			model.addAttribute("currentRelationsFdsJson", gson.toJson(restoreState.getOrDefault("fdsPerTable", Collections.emptyList())));
+			model.addAttribute("currentGlobalRicJson", gson.toJson(restoreState.getOrDefault("globalRic", Collections.emptyList())));
+			model.addAttribute("currentUnionColsJson", gson.toJson(restoreState.getOrDefault("unionCols", Collections.emptyList())));
+			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
+			model.addAttribute("initialCalcTableJson", "[]");
+			model.addAttribute("ricJson", "[]");
+
+			// make sure we don't reuse stale state on future loads
+			session.removeAttribute(RESTORE_SESSION_KEY);
+		} else if (history != null && !history.isEmpty()) {
 			// Step 2 and other
 			Map<String, Object> currentState = history.get(history.size() - 1);
+			System.out.println("[PageController] Using history tail state: " + gson.toJson(currentState));
 
 			// Transfer the saved data to the model during "Continue"
 			model.addAttribute("currentRelationsManualJson", gson.toJson(currentState.get("manualPerTable")));

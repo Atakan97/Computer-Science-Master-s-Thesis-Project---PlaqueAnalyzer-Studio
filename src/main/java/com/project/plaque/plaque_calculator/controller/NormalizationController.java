@@ -23,6 +23,7 @@ public class NormalizationController {
 	private static final String HISTORY_SESSION_KEY = "normalizationHistory";
 	private static final String START_TIME_SESSION_KEY = "normalizationSessionStart";
 	private static final String BCNF_SUMMARY_SESSION_KEY = "bcnfSummary";
+	private static final String RESTORE_SESSION_KEY = "normalizationRestoreState";
 
 	@Autowired
 	public NormalizationController(LogService logService) {
@@ -43,6 +44,7 @@ public class NormalizationController {
 		// Append current state (body) to the end of history
 		history.add(body);
 		session.setAttribute(HISTORY_SESSION_KEY, history);
+		session.removeAttribute(RESTORE_SESSION_KEY);
 
 		// Reset attempts counter after a successful advance
 		session.removeAttribute("normalizeAttempts");
@@ -119,21 +121,38 @@ public class NormalizationController {
 		}
 		return null;
 	}
-
 	@GetMapping("/previous")
 	public String returnToPrevious(HttpSession session) {
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
 		if (history != null && !history.isEmpty()) {
-			history.remove(history.size() - 1);
-			session.setAttribute(HISTORY_SESSION_KEY, history);
-		}
+			System.out.println("[NormalizationController] Returning to previous step. History size before pop: " + history.size());
+			Map<String, Object> restoreState;
+			if (history.size() > 1) {
+				history.remove(history.size() - 1); // drop current (latest) step
+				session.setAttribute(HISTORY_SESSION_KEY, history);
+				restoreState = history.get(history.size() - 1);
+			} else {
+				restoreState = history.get(0); // keep single entry for restoration
+			}
 
-		// By clearing this flag we tell PageController that we are back to the first stage
-		if (history == null || history.isEmpty()) {
-			session.removeAttribute("usingDecomposedAsOriginal");
+			if (restoreState != null) {
+				System.out.println("[NormalizationController] Restoring state: " + gson.toJson(restoreState));
+				session.setAttribute(RESTORE_SESSION_KEY, restoreState);
+				session.setAttribute("usingDecomposedAsOriginal", Boolean.TRUE);
+			} else {
+				clearRestoreState(session);
+			}
+		} else {
+			System.out.println("[NormalizationController] No history to restore.");
+			clearRestoreState(session);
 		}
 
 		return "redirect:/normalization";
+	}
+
+	private void clearRestoreState(HttpSession session) {
+		session.removeAttribute("usingDecomposedAsOriginal");
+		session.removeAttribute(RESTORE_SESSION_KEY);
 	}
 }

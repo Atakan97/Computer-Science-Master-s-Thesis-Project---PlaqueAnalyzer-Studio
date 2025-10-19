@@ -1,6 +1,6 @@
 package com.project.plaque.plaque_calculator.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper; // JSON işlemek için
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.plaque.plaque_calculator.model.LogEntry;
 import com.project.plaque.plaque_calculator.repository.LogRepository;
 import jakarta.servlet.http.HttpSession;

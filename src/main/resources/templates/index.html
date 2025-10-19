@@ -2,7 +2,6 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8">
-  <title>Welcome to PlaqueCalculatorApp</title>
   <link rel="stylesheet" th:href="@{/css/style.css}" />
   <style>
     body {
@@ -88,7 +87,13 @@
 </head>
 <body>
 <div class="container">
-  <h1>Welcome to PlaqueCalculatorApp</h1>
+  <div class="app-brand" style="margin-bottom: 24px;">
+    <div class="brand-text">
+      <span class="brand-name">PlaqueCalculator</span>
+      <span class="brand-tagline">Calculate • Display • Normalize Data Plaque</span>
+    </div>
+  </div>
+
   <p>Calculates relation information content values, shows plaque and processes normalization steps.</p>
 
   <div class="start-app-section">

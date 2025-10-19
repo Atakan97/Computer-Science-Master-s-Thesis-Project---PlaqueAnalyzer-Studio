@@ -63,15 +63,29 @@ public class ComputeController {
 					.collect(Collectors.joining(";"));
 		}
 
-		// Call RicService (monteCarlo and samples forwarded)
+		// Call RicService with adaptive Monte Carlo fallbacks so we can gracefully degrade
+		// from exact computation to approximations when the external jar hits timeouts.
 		double[][] ricArr = new double[0][0];
-		String errorMessage = null;
+		List<String> ricSteps = new ArrayList<>();
+		String finalStrategy = null;
 		try {
-			ricArr = ricService.computeRicFromManualData(safeManual, safeFds, monteCarlo, samples);
+			RicService.RicComputationResult result = ricService.computeRicAdaptive(safeManual, safeFds, monteCarlo, samples);
+			ricArr = result.matrix();
+			ricSteps = result.steps();
+			finalStrategy = result.finalStrategy();
+		} catch (RicService.RicComputationException adaptiveEx) {
+			ricSteps = adaptiveEx.getSteps();
+			model.addAttribute("ricError", "Error while calculating information content: " + adaptiveEx.getMessage());
 		} catch (Exception ex) {
 			ex.printStackTrace();
 			model.addAttribute("ricError", "Error while calculating information content: " + ex.getMessage());
 		}
+		// Persist the execution trail in both model and session so UI pages and subsequent
+		// requests (e.g., decomposition flows) can display the full timeline of attempts.
+		model.addAttribute("ricSteps", ricSteps);
+		model.addAttribute("ricFinalStrategy", finalStrategy);
+		session.setAttribute("ricComputationSteps", ricSteps);
+		session.setAttribute("ricFinalStrategy", finalStrategy);
 
 		// Converting double[][] -> List<String[]> for model and session
 		List<String[]> matrixForModel = new ArrayList<>();
@@ -176,7 +190,7 @@ public class ComputeController {
 		return "calc-results";
 	}
 
-	// Convert(and parsing) a string like "A->B;C->D;E->F,G" to List<FD>
+	// Convert (and parsing) a string like "A->B;C->D;E->F,G" to List<FD>
 	private List<FD> parseFdsString(String fds) {
 		if (fds == null || fds.isBlank()) {
 			return Collections.emptyList();

@@ -1,35 +1,74 @@
 /* Basic font and coloring scheme for the entire page */
 body {
     font-family: 'Inter', sans-serif;
-    line-height: 1.6;
     margin: 0;
-    padding: 20px;
-    background-color: #f0f4f8;
-    color: #334155;
+    padding: 28px;
+    background:
+            linear-gradient(180deg, #fdfcfb 0%, #edf1f6 45%, #dfe7f5 100%),
+            radial-gradient(90% 70% at 20% 15%, rgba(96, 165, 250, 0.18), transparent 55%),
+            radial-gradient(85% 65% at 80% 10%, rgba(167, 139, 250, 0.16), transparent 55%);
+    color: #1e293b;
     display: flex;
     flex-direction: column;
     align-items: center;
     min-height: 100vh;
 }
-
+.container {
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: 0 32px 70px rgba(15, 23, 42, 0.12);
+}
 /* Plaque calculator header settings */
-h1 {
-    color: #1e3a8a;
+.app-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 32px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 45%, #4338ca 100%);
+    color: #ffffff;
+    box-shadow: 0 18px 35px rgba(30, 58, 138, 0.28);
+    margin-bottom: 34px;
+}
+.brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     text-align: center;
-    margin-bottom: 30px;
-    font-size: 2.8em;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+}
+.brand-name {
+    font-size: 2.4rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+}
+.brand-tagline {
+    font-size: 0.95rem;
+    opacity: 0.82;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 /* Input & parameters header */
-h2 {
-    color: #334155;
-    font-size: 1.8em;
-    margin-top: 40px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #e2e8f0;
-    padding-bottom: 10px;
+.section-heading {
+    position: relative;
+    margin: 48px 0 24px;
+    font-size: 2rem;
+    font-weight: 600;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+    padding-left: 18px;
+}
+.section-heading::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 70%;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #22d3ee 0%, #6366f1 100%);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.25);
 }
 .input-container {
     display: flex;
@@ -393,7 +432,66 @@ input[type="file"]::file-selector-button:hover {
     font-weight: 700;
     margin-left: 10px;
 }
-
+/* Style for calculation results header (calc-results.html */
+.results-heading {
+    margin: 12px 0 32px;
+    font-size: 2.6rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: #0f172a;
+    text-align: center;
+    position: relative;
+}
+.results-heading::after {
+    content: "";
+    display: block;
+    width: 120px;
+    height: 6px;
+    margin: 18px auto 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #22d3ee, #6366f1);
+    box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28);
+}
+/* Style settings for information message about relational information content status in calculation results page*/
+.ric-status {
+    margin: 20px auto;
+    max-width: 800px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 24px;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+.ric-status ul {
+    list-style: disc;
+    margin: 0 0 12px 20px;
+    padding: 0;
+    color: #1f2937;
+    line-height: 1.6;
+}
+.ric-status-final {
+    font-weight: 600;
+    color: #2563eb;
+}
+.status-heading {
+    margin: 0 0 16px;
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: #1d4ed8;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.status-heading::before {
+    content: "";
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #22d3ee, #3b82f6);
+    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.3);
+}
 /* Results table */
 #results {
     margin-top: 40px;
@@ -423,6 +521,53 @@ input[type="file"]::file-selector-button:hover {
 }
 #resultTable tbody tr:nth-child(even) {
     background-color: #ffffff !important;
+}
+.result-section-title {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 28px auto 14px;
+    padding: 12px 26px;
+    min-width: 260px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(99, 102, 241, 0.24));
+    box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
+    color: #102a43;
+    font-size: 1.22rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#fdListSection {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+#fdListUl {
+    list-style: disc;
+    margin: 0 auto 12px;
+    padding: 0;
+    display: inline-block;
+    text-align: left;
+}
+
+.tables-side-by-side {
+    display: flex;
+    gap: 60px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.tables-side-by-side .table-wrapper {
+    flex: 0 1 340px;
+    text-align: center;
 }
 
 /* Highlight row settings */
@@ -500,9 +645,6 @@ input[type="file"]::file-selector-button:hover {
     body {
         padding: 15px;
     }
-    h1 {
-        font-size: 2em;
-    }
     .container-main {
         padding: 20px;
     }
@@ -529,9 +671,6 @@ input[type="file"]::file-selector-button:hover {
     }
 }
 @media (max-width: 480px) {
-    h1 {
-        font-size: 1.8em;
-    }
     .container-main {
         padding: 15px;
     }
@@ -697,7 +836,44 @@ input[type="file"]::file-selector-button:hover {
     flex: 1;
     min-width: 400px;
 }
-
+/* Style for Functional Dependencies List on the Normalization page */
+.fd-inline-panel {
+    margin: 12px 0 24px;
+    padding: 16px 20px;
+    border-radius: 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px;
+}
+.fd-inline-panel h4 {
+    margin: 0;
+    font-size: 1.05em;
+    color: #1e293b;
+    flex-basis: 100%;
+}
+.fd-inline-panel ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+}
+.fd-inline-panel ul li {
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-weight: 600;
+    color: #1f2937;
+}
+.fd-inline-panel ul li.inferred {
+    background: #fee2e2;
+    color: #b91c1c;
+}
 /* Change layout to bottom-to-bottom for small screens (Responsive) */
 @media (max-width: 850px) {
     .main-normalization-flex {
@@ -1001,6 +1177,7 @@ a.button {
     text-decoration: none;
     color: white;
 }
+/* BCNF tables page styles */
 .bcnf-summary-container {
     max-width: 1100px;
     width: 100%;
@@ -1022,21 +1199,10 @@ a.button {
 .bcnf-tables-container {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 24px;
 }
-
-.bcnf-table-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    padding: 20px;
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-}
-
 .bcnf-log-section {
     margin: 48px auto 0;
     max-width: 520px;
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.85));
     padding: 28px 32px;
     border-radius: 18px;
     box-shadow: 0 20px 45px rgba(15, 23, 42, 0.14);
@@ -1106,7 +1272,7 @@ a.button {
 .bcnf-log-section button.button:active {
     transform: translateY(0);
 }
-
+/* Button style for the buttons in app */
 .button.pill {
     display: inline-flex;
     align-items: center;
