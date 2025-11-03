@@ -3,6 +3,7 @@ package com.project.plaque.plaque_calculator.service;
 import com.project.plaque.plaque_calculator.model.FD;
 import org.springframework.stereotype.Service;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class FDService {
@@ -67,5 +68,116 @@ public class FDService {
 		// Clear trivial dependencies (e.g. 1->1 or 1,2->1)
 		transitiveFDs.removeIf(fd -> fd.getLhs().containsAll(fd.getRhs()));
 		return new ArrayList<>(transitiveFDs);
+	}
+
+	/**
+	 * Parse FD string to FD objects (attribute names only)
+	 * Format: "A,B->C;D->E" or "A,B→C;D→E"
+	 *
+	 * @param fdStr FD string with attribute names
+	 * @return List of FD objects
+	 */
+	public List<FD> parseFDString(String fdStr) {
+		if (fdStr == null || fdStr.isBlank()) {
+			return Collections.emptyList();
+		}
+
+		// Normalize arrows
+		fdStr = fdStr.replace("→", "->").replace("\u2192", "->");
+
+		List<FD> result = new ArrayList<>();
+		for (String part : fdStr.split(";")) {
+			part = part.trim();
+			if (part.isEmpty()) continue;
+
+			String[] sides = part.split("->");
+			if (sides.length != 2) continue;
+
+			Set<String> lhs = Arrays.stream(sides[0].split(","))
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.collect(Collectors.toSet());
+			Set<String> rhs = Arrays.stream(sides[1].split(","))
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.collect(Collectors.toSet());
+
+			if (!lhs.isEmpty() && !rhs.isEmpty()) {
+				result.add(new FD(lhs, rhs));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Parse FD string to FD objects (supports column indexes)
+	 * Format: "1,2->3;4->5" or "A,B->C;D->E"
+	 *
+	 * @param fdStr FD string with column indexes (1-based) or attribute names
+	 * @param attributeOrder List of attribute names for column index conversion
+	 * @return List of FD objects
+	 */
+	public List<FD> parseFDStringWithIndexes(String fdStr, List<String> attributeOrder) {
+		if (fdStr == null || fdStr.isBlank() || attributeOrder == null) {
+			return Collections.emptyList();
+		}
+
+		// Normalize arrows
+		fdStr = fdStr.replace("→", "->").replace("\u2192", "->");
+
+		List<FD> result = new ArrayList<>();
+		for (String part : fdStr.split(";")) {
+			part = part.trim();
+			if (part.isEmpty()) continue;
+
+			String[] sides = part.split("->");
+			if (sides.length != 2) continue;
+
+			String lhsStr = sides[0].trim();
+			String rhsStr = sides[1].trim();
+			if (lhsStr.isEmpty() || rhsStr.isEmpty()) continue;
+
+			// Parse LHS (left hand side)
+			Set<String> lhs = parseAttributeSet(lhsStr, attributeOrder);
+
+			// Parse RHS (right hand side)
+			Set<String> rhs = parseAttributeSet(rhsStr, attributeOrder);
+
+			// Create FD if both sides are valid
+			if (!lhs.isEmpty() && !rhs.isEmpty()) {
+				result.add(new FD(lhs, rhs));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Parse attribute set from string (supports column indexes or attribute names)
+	 *
+	 * @param attrStr Attribute string (e.g., "1,2" or "A,B")
+	 * @param attributeOrder List of attribute names for column index conversion
+	 * @return Set of attribute names
+	 */
+	private Set<String> parseAttributeSet(String attrStr, List<String> attributeOrder) {
+		Set<String> attrs = new LinkedHashSet<>();
+		String[] parts = attrStr.split(",");
+
+		for (String part : parts) {
+			part = part.trim();
+			if (part.isEmpty()) continue;
+
+			// Try to convert column index to attribute name
+			try {
+				int colIdx = Integer.parseInt(part) - 1; // 1-based → 0-based
+				if (colIdx >= 0 && colIdx < attributeOrder.size()) {
+					attrs.add(attributeOrder.get(colIdx));
+				}
+			} catch (NumberFormatException e) {
+				// Already an attribute name
+				attrs.add(part);
+			}
+		}
+
+		return attrs;
 	}
 }

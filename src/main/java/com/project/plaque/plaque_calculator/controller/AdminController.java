@@ -73,10 +73,27 @@ public class AdminController {
 					.collect(Collectors.toList());
 		}
 
+		// Active user count (unique userName count)
+		long activeUsers = filteredLogs.stream()
+				.filter(log -> log.getUserName() != null && !log.getUserName().isEmpty())
+				.map(LogEntry::getUserName)
+				.distinct()
+				.count();
+
+		// Average completion time
+		double avgDuration = filteredLogs.stream()
+				.filter(log -> log.getElapsedTimeSecs() != null)
+				.mapToLong(LogEntry::getElapsedTimeSecs)
+				.average()
+				.orElse(0.0);
+
 		// Add logs and filter value to the Model
 		model.addAttribute("userNameFilter", nameFilter);
 		// Adds logs to the model
 		model.addAttribute("logs", filteredLogs);
+		model.addAttribute("activeUsers", activeUsers);
+		model.addAttribute("avgDuration", String.format("%.1f", avgDuration));
+
 
 		return "admin-logs";
 	}

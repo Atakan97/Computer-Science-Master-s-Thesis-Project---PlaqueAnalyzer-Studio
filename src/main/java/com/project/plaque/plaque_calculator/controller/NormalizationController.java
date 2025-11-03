@@ -33,8 +33,7 @@ public class NormalizationController {
 
 	@PostMapping("/continue")
 	public String continueNormalization(@RequestBody Map<String, Object> body, HttpSession session) {
-		long startTime = System.currentTimeMillis();
-
+		logService.info("[NormalizationController] /continue invoked with payload keys=" + body.keySet());
 		// Get the history list from Session, create a new list if it doesn't exist
 		@SuppressWarnings("unchecked")
 		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
@@ -42,8 +41,10 @@ public class NormalizationController {
 			history = new ArrayList<>();
 		}
 
+
 		// Append current state (body) to the end of history
 		history.add(body);
+		logService.info("[NormalizationController] history size after append=" + history.size());
 		session.setAttribute(HISTORY_SESSION_KEY, history);
 		session.removeAttribute(RESTORE_SESSION_KEY);
 
@@ -100,7 +101,19 @@ public class NormalizationController {
 			summaryData.put("elapsedTime", elapsedFromSession.longValue());
 		}
 
-		Integer tableCount = (Integer) session.getAttribute("bcnfTableCount");
+		// Calculate tableCount from payload
+		Integer tableCount = null;
+		Object columnsPerTableObj = body.get("columnsPerTable");
+		if (columnsPerTableObj instanceof List<?>) {
+			tableCount = ((List<?>) columnsPerTableObj).size();
+			// Update session with correct table count
+			session.setAttribute("bcnfTableCount", tableCount);
+			logService.info("[NormalizationController] Updated bcnfTableCount from payload: " + tableCount);
+		} else {
+			// Fallback to session value
+			tableCount = (Integer) session.getAttribute("bcnfTableCount");
+		}
+
 		if (tableCount != null) {
 			summaryData.put("tableCount", tableCount);
 		}
@@ -153,11 +166,46 @@ public class NormalizationController {
 		}
 		return null;
 	}
+	@PostMapping("/increment-attempt")
+	public ResponseEntity<?> incrementAttempt(HttpSession session) {
+		// Use same key as DecomposeController
+		Integer attemptCount = (Integer) session.getAttribute("attemptCount");
+		if (attemptCount == null) {
+			attemptCount = 1;
+		}
+		attemptCount++;
+		session.setAttribute("attemptCount", attemptCount);
+		logService.info("[NormalizationController] Attempt count incremented to: " + attemptCount);
+		return ResponseEntity.ok().build();
+	}
+
 	@GetMapping("/previous")
 	public String returnToPrevious(HttpSession session) {
-		session.setAttribute(RESET_SESSION_KEY, Boolean.TRUE);
-		session.removeAttribute(HISTORY_SESSION_KEY);
-		clearRestoreState(session);
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> history = (List<Map<String, Object>>) session.getAttribute(HISTORY_SESSION_KEY);
+		logService.info("[NormalizationController] /previous invoked. history size=" + (history == null ? 0 : history.size()));
+		if (history == null || history.isEmpty()) {
+			session.setAttribute(RESET_SESSION_KEY, Boolean.TRUE);
+			logService.info("[NormalizationController] history empty. Trigger reset state.");
+			return "redirect:/normalization";
+		}
+
+		List<Map<String, Object>> updatedHistory = new ArrayList<>(history);
+		Map<String, Object> poppedState = updatedHistory.remove(updatedHistory.size() - 1);
+		logService.info("[NormalizationController] popped state. new history size=" + updatedHistory.size());
+		session.setAttribute(HISTORY_SESSION_KEY, updatedHistory);
+
+		Map<String, Object> restoreState = poppedState != null ? new HashMap<>(poppedState) : null;
+
+		if (restoreState != null) {
+			session.setAttribute(RESTORE_SESSION_KEY, restoreState);
+			session.setAttribute("usingDecomposedAsOriginal", Boolean.TRUE);
+			logService.info("[NormalizationController] restoreState keys=" + restoreState.keySet());
+		} else {
+			logService.info("[NormalizationController] history exhausted after pop; resetting normalization state.");
+			session.setAttribute(RESET_SESSION_KEY, Boolean.TRUE);
+			clearRestoreState(session);
+		}
 		return "redirect:/normalization";
 	}
 

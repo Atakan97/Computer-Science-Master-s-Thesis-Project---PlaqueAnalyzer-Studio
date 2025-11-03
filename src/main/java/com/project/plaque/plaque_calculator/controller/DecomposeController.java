@@ -96,15 +96,14 @@ public class DecomposeController {
 	// POST /normalize/decompose-all (processing multiple decomposed-tables)
 	@PostMapping("/decompose-all")
 	public ResponseEntity<?> decomposeAll(@RequestBody DecomposeAllRequest req, HttpSession session) {
-		// Attempt sayısını artır
+		// Initialize attempt count if not exists (first decomposition = first attempt)
+		// attemptCount is incremented only when "Change Decomposition" is clicked
 		Integer attemptCount = (Integer) session.getAttribute(ATTEMPT_COUNT_SESSION_KEY);
 		if (attemptCount == null) {
-			attemptCount = 0;
+			attemptCount = 1; // First attempt
+			session.setAttribute(ATTEMPT_COUNT_SESSION_KEY, attemptCount);
 		}
-		attemptCount++;
-		session.setAttribute(ATTEMPT_COUNT_SESSION_KEY, attemptCount);
-
-		// Normalizasyon başlangıç zamanını set et (ilk denemede)
+		// Adjust normalization starting time
 		if (attemptCount == 1) {
 			Long sessionStart = (Long) session.getAttribute("normalizationSessionStart");
 			if (sessionStart == null) {
@@ -118,21 +117,23 @@ public class DecomposeController {
 
 		DecomposeAllResponse response = decomposeService.decomposeAll(req, session);
 
-		// Eğer BCNF ise, süre bilgisini toplayıp oturum değerlerini sıfırla
+		// If BCNF, collect duration information and reset session values
 		if (response.isBCNFDecomposition()) {
 			Long startTime = (Long) session.getAttribute(NORMALIZATION_START_TIME_KEY);
 			if (startTime == null) {
 				startTime = (Long) session.getAttribute("normalizationSessionStart");
 			}
+			long currentTime = System.currentTimeMillis();
 			long elapsedTime = startTime != null ?
-					(System.currentTimeMillis() - startTime) / 1000 : 0;
+					(currentTime - startTime) / 1000 : 0;
+
 			session.setAttribute("bcnfAttempts", attemptCount);
 			session.setAttribute("bcnfElapsedTime", elapsedTime);
 			int tableCount = response.getTableResults() != null ? response.getTableResults().size() : 0;
 			session.setAttribute("bcnfTableCount", tableCount);
 			session.setAttribute("bcnfDependencyPreserved", response.isDpPreserved());
 
-			// Session'ı temizle
+			// Clean session
 			session.removeAttribute(ATTEMPT_COUNT_SESSION_KEY);
 			session.removeAttribute(NORMALIZATION_START_TIME_KEY);
 			session.removeAttribute("normalizationSessionStart");

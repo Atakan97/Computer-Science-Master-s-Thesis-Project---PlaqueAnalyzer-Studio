@@ -1089,7 +1089,7 @@ input[type="file"]::file-selector-button:hover {
 
     /* Positioning */
     position: absolute;
-    top: -25px;
+    top: -20px;
     left: 50%;
     transform: translateX(-50%);
 
@@ -1257,7 +1257,7 @@ input[type="file"]::file-selector-button:hover {
     min-width: 100%;
 }
 .fd-inline-panel--compact {
-    margin: 4px 0 0;
+    margin: 4px 0 16px;
     padding: 12px 16px;
     display: block;
     width: auto;
@@ -1289,6 +1289,10 @@ input[type="file"]::file-selector-button:hover {
     border: 1px solid #ddd;
     padding: 1rem;
     box-sizing: border-box;
+}
+
+.decomposed-wrapper table.data-grid {
+    margin-top: 8px;
 }
 
 .compute-ric-btn {
@@ -1610,6 +1614,16 @@ input[type="file"]::file-selector-button:hover {
     line-height: 1.4;
 }
 
+.bcnf-table-card table.data-grid {
+    font-weight: normal;
+    font-size: 1rem;
+}
+
+.bcnf-table-card table.data-grid th,
+.bcnf-table-card table.data-grid td {
+    font-weight: normal;
+}
+
 .bcnf-log-section {
     margin: 48px auto 0;
     max-width: 520px;
@@ -1783,6 +1797,119 @@ input[type="file"]::file-selector-button:hover {
     margin-top: 12px;
 }
 
+/* BCNF Status Badge */
+.bcnf-status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-left: 12px;
+    vertical-align: middle;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.bcnf-status-badge.bcnf-yes {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    color: #065f46;
+    border: 1px solid #34d399;
+}
+
+.bcnf-status-badge.bcnf-no {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+    border: 1px solid #f87171;
+}
+
+.bcnf-info-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 6px;
+    margin-top: 8px;
+    font-size: 0.9em;
+}
+
+/* Normal Form Badges */
+.normal-form-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+/* Original table container badges - extra margin */
+#originalTableContainer .normal-form-badges {
+    margin-bottom: 16px;
+}
+
+.normal-form-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 0.7em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border: 1.5px solid;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    transition: all 0.2s ease;
+}
+
+.normal-form-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+}
+
+/* BCNF Badge */
+.normal-form-badge.nf-bcnf {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    color: #1e40af;
+    border-color: #60a5fa;
+}
+
+/* 3NF Badge */
+.normal-form-badge.nf-3nf {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    color: #15803d;
+    border-color: #4ade80;
+}
+
+/* 2NF Badge */
+.normal-form-badge.nf-2nf {
+    background: linear-gradient(135deg, #fef9c3 0%, #fef08a 100%);
+    color: #a16207;
+    border-color: #facc15;
+}
+
+/* 1NF Badge */
+.normal-form-badge.nf-1nf {
+    background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+    color: #6b21a8;
+    border-color: #c084fc;
+}
+
+/* Current Normal Form (larger, highlighted) */
+.normal-form-badge.current {
+    padding: 4px 12px;
+    font-size: 0.75em;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Check icon */
+.normal-form-badge .check-icon {
+    font-size: 0.9em;
+}
 
 
 

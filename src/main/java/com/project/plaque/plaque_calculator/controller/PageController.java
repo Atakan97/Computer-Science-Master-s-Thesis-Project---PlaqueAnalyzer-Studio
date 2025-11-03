@@ -3,6 +3,7 @@ package com.project.plaque.plaque_calculator.controller;
 import com.google.gson.Gson;
 import com.project.plaque.plaque_calculator.model.FD;
 import com.project.plaque.plaque_calculator.service.FDService;
+import com.project.plaque.plaque_calculator.service.NormalFormChecker;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
@@ -19,13 +20,15 @@ public class PageController {
 
 	private final NormalizationController normalizationController;
 	private final FDService fdService;
+	private final NormalFormChecker normalFormChecker;
 	private final Gson gson = new Gson();
 	private static final String RESTORE_SESSION_KEY = "normalizationRestoreState";
 	private static final String RESET_SESSION_KEY = "normalizationReset";
 
-	public PageController(NormalizationController normalizationController, FDService fdService) {
+	public PageController(NormalizationController normalizationController, FDService fdService, NormalFormChecker normalFormChecker) {
 		this.normalizationController = normalizationController;
 		this.fdService = fdService;
+		this.normalFormChecker = normalFormChecker;
 	}
 
 	// Home page redirect
@@ -112,7 +115,7 @@ public class PageController {
 	@GetMapping("/normalization")
 	public String normalizePage(HttpSession session, Model model) {
 		Boolean resetRequested = (Boolean) session.getAttribute(RESET_SESSION_KEY);
-        boolean initialStatePopulated = false;
+		boolean initialStatePopulated = false;
 
 		Long startTime = normalizationController.setAndGetNormalizationStartTime(session);
 		model.addAttribute("normalizationStartTimeMs", startTime);
@@ -147,6 +150,11 @@ public class PageController {
 			model.addAttribute("currentGlobalRicJson", gson.toJson(restoreState.getOrDefault("globalRic", Collections.emptyList())));
 			model.addAttribute("currentUnionColsJson", gson.toJson(restoreState.getOrDefault("unionCols", Collections.emptyList())));
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(restoreState.getOrDefault("manualPerTable", Collections.emptyList())));
+
+			// Calculate normal forms for each relation
+			List<String> normalForms = calculateNormalFormsForRelations(restoreState, session);
+			model.addAttribute("currentRelationsNormalFormsJson", gson.toJson(normalForms));
+
 			model.addAttribute("initialCalcTableJson", "[]");
 			model.addAttribute("ricJson", "[]");
 
@@ -166,6 +174,11 @@ public class PageController {
 			model.addAttribute("currentGlobalRicJson", gson.toJson(currentState.get("globalRic")));
 			model.addAttribute("currentUnionColsJson", gson.toJson(currentState.get("unionCols")));
 			model.addAttribute("currentGlobalManualRowsJson", gson.toJson(currentState.get("manualPerTable")));
+
+			// Calculate normal forms for each relation
+			List<String> normalForms = calculateNormalFormsForRelations(currentState, session);
+			model.addAttribute("currentRelationsNormalFormsJson", gson.toJson(normalForms));
+
 			model.addAttribute("initialCalcTableJson", "[]");
 			model.addAttribute("ricJson", "[]");
 		} else if (!initialStatePopulated) {
@@ -225,6 +238,24 @@ public class PageController {
 	private void populateInitialNormalization(HttpSession session, Model model) {
 		String initJson = (String) session.getAttribute("initialCalcTableJson");
 		String ricJsonInit = (String) session.getAttribute("originalTableJson");
+
+		// Calculate original table's normal form
+		String originalNormalForm = "1NF"; // Default
+		try {
+			@SuppressWarnings("unchecked")
+			List<FD> originalFDs = (List<FD>) session.getAttribute("originalFDs");
+			@SuppressWarnings("unchecked")
+			List<String> originalAttrOrder = (List<String>) session.getAttribute("originalAttrOrder");
+
+			if (originalFDs != null && originalAttrOrder != null && !originalAttrOrder.isEmpty()) {
+				Set<String> attributes = new LinkedHashSet<>(originalAttrOrder);
+				originalNormalForm = normalFormChecker.checkNormalForm(attributes, originalFDs);
+			}
+		} catch (Exception e) {
+			System.err.println("Error calculating original normal form: " + e.getMessage());
+		}
+
+		model.addAttribute("originalNormalForm", originalNormalForm);
 		model.addAttribute("initialCalcTableJson", initJson != null ? initJson : "[]");
 		model.addAttribute("ricJson", ricJsonInit != null ? ricJsonInit : "[]");
 		model.addAttribute("currentRelationsManualJson", "[]");
@@ -235,5 +266,78 @@ public class PageController {
 		model.addAttribute("currentGlobalRicJson", "[]");
 		model.addAttribute("currentUnionColsJson", "[]");
 		model.addAttribute("currentGlobalManualRowsJson", "[]");
+	}
+
+	// Calculate normal forms for each relation in the state
+	private List<String> calculateNormalFormsForRelations(Map<String, Object> state, HttpSession session) {
+		List<String> normalForms = new ArrayList<>();
+
+		try {
+			@SuppressWarnings("unchecked")
+			List<String> fdsPerTableOriginal = (List<String>) state.get("fdsPerTableOriginal");
+			@SuppressWarnings("unchecked")
+			List<List<Integer>> columnsPerTable = (List<List<Integer>>) state.get("columnsPerTable");
+			@SuppressWarnings("unchecked")
+			List<String> originalAttrOrder = (List<String>) session.getAttribute("originalAttrOrder");
+
+			if (fdsPerTableOriginal == null || columnsPerTable == null) {
+				return normalForms;
+			}
+
+			// For each table
+			for (int i = 0; i < columnsPerTable.size(); i++) {
+				String normalForm = "1NF"; // Default
+
+				try {
+					List<Integer> cols = columnsPerTable.get(i);
+					String fdStr = i < fdsPerTableOriginal.size() ? fdsPerTableOriginal.get(i) : "";
+
+					// Build attributes set
+					Set<String> attributes = new LinkedHashSet<>();
+					if (originalAttrOrder != null && cols != null) {
+						for (Integer colIdx : cols) {
+							if (colIdx >= 0 && colIdx < originalAttrOrder.size()) {
+								attributes.add(originalAttrOrder.get(colIdx));
+							}
+						}
+					}
+
+					// Parse FDs for this table
+					List<FD> tableFDs = parseFDString(fdStr, originalAttrOrder);
+
+					// Calculate normal form
+					if (!attributes.isEmpty()) {
+						normalForm = normalFormChecker.checkNormalForm(attributes, tableFDs);
+					}
+				} catch (Exception e) {
+					System.err.println("Error calculating normal form for table " + i + ": " + e.getMessage());
+				}
+
+				normalForms.add(normalForm);
+			}
+		} catch (Exception e) {
+			System.err.println("Error calculating normal forms: " + e.getMessage());
+		}
+
+		return normalForms;
+	}
+
+	/**
+	 * Parse FD string to FD objects
+	 * Format: "1->2;1,3->4" or "1→2;1,3→4"
+	 * Delegates to FDService for parsing
+	 */
+	private List<FD> parseFDString(String fdStr, List<String> originalAttrOrder) {
+		// Delegate to FDService
+		return fdService.parseFDStringWithIndexes(fdStr, originalAttrOrder);
+	}
+
+	/**
+	 * Convert FD to string representation
+	 */
+	private String fdToString(FD fd) {
+		String lhs = fd.getLhs().stream().sorted().collect(Collectors.joining(","));
+		String rhs = fd.getRhs().stream().sorted().collect(Collectors.joining(","));
+		return lhs + "→" + rhs;
 	}
 }

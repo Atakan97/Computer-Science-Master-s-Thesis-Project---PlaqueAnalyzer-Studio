@@ -6,6 +6,7 @@ public class DecomposeResponse {
 	private double[][] ricMatrix;
 	private List<String> projectedFDs;
 	private List<String> steps;
+	private String normalForm; // "BCNF", "3NF", "2NF", "1NF"
 
 	// Constructor
 	public DecomposeResponse(double[][] ricMatrix,
@@ -41,6 +42,13 @@ public class DecomposeResponse {
 	}
 	public void setSteps(List<String> steps) {
 		this.steps = steps;
+	}
+
+	public String getNormalForm() {
+		return normalForm;
+	}
+	public void setNormalForm(String normalForm) {
+		this.normalForm = normalForm;
 	}
 
 }

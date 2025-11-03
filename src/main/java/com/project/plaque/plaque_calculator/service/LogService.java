@@ -39,4 +39,8 @@ public class LogService {
 		logRepository.save(logEntry);
 		System.out.println("Logged BCNF Success: User=" + userName + ", Attempts=" + attempts + ", Time=" + elapsedTimeSecs + "s, Tables=" + (tableCount != null ? tableCount : 0) + ", DP=" + (dependencyPreserved != null && dependencyPreserved));
 	}
+
+	public void info(String message) {
+		System.out.println(message);
+	}
 }

@@ -20,11 +20,13 @@ public class DecomposeService {
 	private static final String HISTORY_SESSION_KEY = "decompositionHistory";
 	private final FDService fdService;
 	private final RicService ricService;
+	private final NormalFormChecker normalFormChecker;
 	private final Gson gson = new Gson();
 
-	public DecomposeService(FDService fdService, RicService ricService) {
+	public DecomposeService(FDService fdService, RicService ricService, NormalFormChecker normalFormChecker) {
 		this.fdService = fdService;
 		this.ricService = ricService;
+		this.normalFormChecker = normalFormChecker;
 	}
 
 	public DecomposeResponse decompose(DecomposeRequest req, HttpSession session) {
@@ -366,18 +368,21 @@ public class DecomposeService {
 
 			combinedProjectedFds.addAll(minimizedProjected);
 
-			// BCNF checking
-			if (!checkBCNF(attrs, scopedOriginalFds, fdService)) {
+			// BCNF checking: Her tablo kendi projected FD'lerine göre kontrol edilmeli
+			// (Tüm orijinal FD'ler yerine, sadece bu tabloya ait projected FD'ler kullanılır)
+			boolean isBCNF = checkBCNF(attrs, minimizedProjected, fdService);
+			if (!isBCNF) {
 				allTablesBCNF = false;
 			}
 
-			// Build response item with projected FDs only (no per-table dp/lj)
+			// Check normal form for this table
+			String normalForm = normalFormChecker.checkNormalForm(attrs, minimizedProjected);
+
+			// Build response item with projected FDs and normal form
 			List<String> projectedStr = minimizedProjected.stream().map(this::fdToString).collect(Collectors.toList());
 			DecomposeResponse drResp = new DecomposeResponse(new double[0][0], projectedStr);
+			drResp.setNormalForm(normalForm);
 			perTableResponses.add(drResp);
-
-			System.out.println("DecomposeService.decomposeAll: per-table idx=" + i + " attrs=" + attrs +
-					" projected=" + projectedStr);
 		}
 
 		// global dp-preserved (combined projected FDs imply original)
@@ -763,57 +768,18 @@ public class DecomposeService {
 		return resp;
 	}
 
+	/**
+	 * Check if a relation is in BCNF
+	 * Delegates to NormalFormChecker for comprehensive BCNF check
+	 *
+	 * @param attributes Set of attributes in the relation
+	 * @param allOriginalFds List of functional dependencies
+	 * @param fdService FDService instance (kept for backward compatibility, not used)
+	 * @return true if relation is in BCNF
+	 */
 	public boolean checkBCNF(Set<String> attributes, List<FD> allOriginalFds, FDService fdService) {
-		// Create the full set of FDs to be used for inclusion (F+ = Original + Transitive)
-		List<FD> transitiveFDs = fdService.findTransitiveFDs(allOriginalFds);
-		Set<FD> allFDsForClosure = new HashSet<>(allOriginalFds);
-		allFDsForClosure.addAll(transitiveFDs);
-		List<FD> fdsListForClosure = new ArrayList<>(allFDsForClosure);
-
-		// Call the robust method that checks all subsets
-		return isRelationBCNF(attributes, fdsListForClosure);
-	}
-
-	private boolean isRelationBCNF(Set<String> attributes, List<FD> allFdsForClosure) {
-		Set<String> allAttributes = new HashSet<>(attributes);
-		List<String> attrList = new ArrayList<>(attributes);
-		// Number of attributes in the table
-		int n = attrList.size();
-
-		// Loop through 2^n - 1 (all non-empty subsets)
-		for (int mask = 1; mask < (1 << n); mask++) {
-			Set<String> X = new LinkedHashSet<>();
-			for (int i = 0; i < n; i++) {
-				// Potential determinant X
-				if ((mask & (1 << i)) != 0) X.add(attrList.get(i));
-			}
-			// If the entire attribute set X is (R_i), skip (X != R_i)
-			if (X.size() == allAttributes.size()) {
-				continue;
-			}
-			// Calculate Closure: F+ (allFdsForClosure) is used for closure
-			Set<String> closureOfX = fdService.computeClosure(X, allFdsForClosure);
-
-			// Intersect the closure of X with the attributes R_i (X+ ∩ R_i)
-			Set<String> closureRestrictedToRi = new HashSet<>(closureOfX);
-			closureRestrictedToRi.retainAll(allAttributes);
-
-			// Non-triviality check: Check if X implies something non-trivial in R_i
-			Set<String> impliedNonTrivial = new HashSet<>(closureRestrictedToRi);
-			impliedNonTrivial.removeAll(X);
-
-			// If X implies something non-trivial
-			if (!impliedNonTrivial.isEmpty()) {
-
-				// Check: Is X a Super Key? (X+ ∩ R_i = R_i?)
-				if (!closureRestrictedToRi.containsAll(allAttributes)) {
-					// X is not a super key, then BCNF violation
-					return false;
-				}
-			}
-		}
-		// All non-trivial determinants are super keys
-		return true;
+		// Delegate to NormalFormChecker for comprehensive BCNF check
+		return normalFormChecker.isBCNFComprehensive(attributes, allOriginalFds);
 	}
 }
 

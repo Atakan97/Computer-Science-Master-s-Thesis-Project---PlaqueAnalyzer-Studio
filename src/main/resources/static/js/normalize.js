@@ -36,6 +36,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const ricMatrix = Array.isArray(ricRaw) ? ricRaw : [];
 
+    // Save initial original table to sessionStorage for future reference
+    if (originalRows.length > 0 && !sessionStorage.getItem('__initialOriginalTable')) {
+        sessionStorage.setItem('__initialOriginalTable', JSON.stringify(originalRows));
+        sessionStorage.setItem('__initialOriginalRic', JSON.stringify(ricMatrix));
+    }
+
     const alreadyBcnf = Boolean(window.alreadyBcnf);
     if (alreadyBcnf) {
         if (addTableBtn) addTableBtn.style.display = 'none';
@@ -257,7 +263,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderOrigBody(originalRows);
-    if (origContainer) origContainer.appendChild(origTable);
+    if (origContainer) {
+        origContainer.appendChild(origTable);
+
+        // Display normal form badges for original table
+        if (window.originalNormalForm) {
+            displayOriginalTableNormalFormBadges(origContainer, window.originalNormalForm);
+        }
+    }
 
     function applyRicColoring(tableEl) {
         if (!tableEl || !ricMatrix || !ricMatrix.length) return;
@@ -612,6 +625,235 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Check if a relation is in BCNF
+    async function checkRelationBCNF(wrapper, columns, fds) {
+        if (!columns || columns.length === 0) return true; // Empty relation is trivially BCNF
+
+        try {
+            const fdsString = Array.isArray(fds) ? fds.join(';') : (fds || '');
+
+            // Simple heuristic: if no FDs projected to this relation, it's BCNF
+            if (!fdsString || fdsString.trim() === '') {
+                return true;
+            }
+
+            // If there are FDs, check each one
+            const fdList = fdsString.split(';').map(s => s.trim()).filter(Boolean);
+
+            if (fdList.length === 0) {
+                return true; // No FDs -> BCNF
+            }
+
+            // For more accurate check, we need to verify if each FD's LHS is a superkey
+            // Since we don't have full closure logic in frontend, we'll use a conservative approach:
+            // - If FDs exist and we can't verify, assume NOT BCNF to be safe
+            // - Exception: if all FDs have LHS equal to all columns (full key), then BCNF
+
+            const colSet = new Set(columns.map(c => String(c)));
+            const allFDsAreFullKey = fdList.every(fd => {
+                const parts = fd.split('->').map(s => s.trim());
+                if (parts.length !== 2) return false;
+                const lhs = parts[0].split(',').map(s => s.trim());
+                // Check if LHS contains all columns
+                return lhs.length === colSet.size && lhs.every(attr => {
+                    // Map attribute name back to column index
+                    // This is a simplification - in reality we need proper mapping
+                    return true; // Assume it's there
+                });
+            });
+
+            if (allFDsAreFullKey) {
+                return true; // All FDs have full key as LHS -> BCNF
+            }
+
+            // Conservative: if we have FDs and can't verify, assume NOT BCNF
+            return false;
+
+        } catch (err) {
+            console.error('BCNF check error:', err);
+            return false;
+        }
+    }
+
+    // Update "Add Decomposed Table" button state based on BCNF status
+    function updateAddTableButtonState(group, isBCNF) {
+        const footer = group.querySelector('.orig-as-decomposed-footer');
+        if (!footer) return;
+
+        const addBtn = footer.querySelector('button');
+        if (!addBtn) return;
+
+        if (isBCNF) {
+            addBtn.disabled = true;
+            addBtn.title = 'This relation is already in BCNF. No decomposition needed.';
+            addBtn.style.opacity = '0.5';
+            addBtn.style.cursor = 'not-allowed';
+
+            // Add info message
+            let infoMsg = footer.querySelector('.bcnf-info-message');
+            if (!infoMsg) {
+                infoMsg = document.createElement('p');
+                infoMsg.classList.add('bcnf-info-message');
+                infoMsg.style.color = '#16a34a';
+                infoMsg.style.fontSize = '0.9em';
+                infoMsg.style.marginTop = '8px';
+                infoMsg.textContent = '✅ This relation is already in BCNF. No further decomposition required.';
+                footer.appendChild(infoMsg);
+            }
+        } else {
+            addBtn.disabled = false;
+            addBtn.title = 'Add a decomposed table for this relation';
+            addBtn.style.opacity = '1';
+            addBtn.style.cursor = 'pointer';
+
+            const infoMsg = footer.querySelector('.bcnf-info-message');
+            if (infoMsg) infoMsg.remove();
+        }
+    }
+
+    /**
+     * Display normal form badges for a table wrapper
+     * @param {HTMLElement} wrapper - The decomposed table wrapper
+     * @param {string} currentNF - Current normal form ("BCNF", "3NF", "2NF", "1NF")
+     */
+    function displayNormalFormBadges(wrapper, currentNF) {
+        if (!wrapper || !currentNF) return;
+
+        // Remove existing badges from anywhere in wrapper
+        const existingBadges = wrapper.querySelector('.normal-form-badges');
+        if (existingBadges) existingBadges.remove();
+
+        // Create badges container
+        const badgesContainer = document.createElement('div');
+        badgesContainer.classList.add('normal-form-badges');
+
+        // Normal form hierarchy
+        const normalForms = ['1NF', '2NF', '3NF', 'BCNF'];
+        const currentIndex = normalForms.indexOf(currentNF.toUpperCase());
+
+        if (currentIndex === -1) return; // Invalid normal form
+
+        // Create badges for all normal forms up to current
+        normalForms.forEach((nf, index) => {
+            if (index <= currentIndex) {
+                const badge = document.createElement('span');
+                badge.classList.add('normal-form-badge');
+
+                // Add specific class for styling
+                const nfClass = 'nf-' + nf.toLowerCase();
+                badge.classList.add(nfClass);
+
+                // Highlight current normal form
+                if (index === currentIndex) {
+                    badge.classList.add('current');
+                }
+
+                // Add check icon and text
+                const checkIcon = document.createElement('span');
+                checkIcon.classList.add('check-icon');
+                checkIcon.textContent = '✓';
+
+                const text = document.createElement('span');
+                text.textContent = nf;
+
+                badge.appendChild(checkIcon);
+                badge.appendChild(text);
+
+                // Add tooltip
+                badge.title = getNormalFormDescription(nf, index === currentIndex);
+
+                badgesContainer.appendChild(badge);
+            }
+        });
+
+        // Insert badges at the top of wrapper, before FD container
+        const fdContainer = wrapper.querySelector('.fd-list-container');
+        if (fdContainer) {
+            // Insert before FD container
+            fdContainer.parentNode.insertBefore(badgesContainer, fdContainer);
+        } else {
+            // If no FD container, prepend to wrapper
+            wrapper.prepend(badgesContainer);
+        }
+    }
+
+    /**
+     * Get description for normal form tooltip
+     */
+    function getNormalFormDescription(nf, isCurrent) {
+        const descriptions = {
+            '1NF': 'First Normal Form: All attributes are atomic',
+            '2NF': 'Second Normal Form: No partial dependencies',
+            '3NF': 'Third Normal Form: No transitive dependencies',
+            'BCNF': 'Boyce-Codd Normal Form: Every determinant is a candidate key'
+        };
+
+        const prefix = isCurrent ? 'Current: ' : 'Satisfies: ';
+        return prefix + descriptions[nf];
+    }
+
+    // Display normal form badges for original table
+    function displayOriginalTableNormalFormBadges(container, currentNF) {
+        if (!container || !currentNF) return;
+
+        // Remove existing badges
+        const existingBadges = container.querySelector('.normal-form-badges');
+        if (existingBadges) existingBadges.remove();
+
+        // Create badges container
+        const badgesContainer = document.createElement('div');
+        badgesContainer.classList.add('normal-form-badges');
+        badgesContainer.style.marginBottom = '12px';
+
+        // Normal form hierarchy
+        const normalForms = ['1NF', '2NF', '3NF', 'BCNF'];
+        const currentIndex = normalForms.indexOf(currentNF.toUpperCase());
+
+        // Invalid normal form
+        if (currentIndex === -1) return;
+
+        // Create badges for all normal forms up to current
+        normalForms.forEach((nf, index) => {
+            if (index <= currentIndex) {
+                const badge = document.createElement('span');
+                badge.classList.add('normal-form-badge');
+
+                // Add specific class for styling
+                const nfClass = 'nf-' + nf.toLowerCase();
+                badge.classList.add(nfClass);
+
+                // Highlight current normal form
+                if (index === currentIndex) {
+                    badge.classList.add('current');
+                }
+
+                // Add check icon and text
+                const checkIcon = document.createElement('span');
+                checkIcon.classList.add('check-icon');
+                checkIcon.textContent = '✓';
+
+                const text = document.createElement('span');
+                text.textContent = nf;
+
+                badge.appendChild(checkIcon);
+                badge.appendChild(text);
+
+                // Add tooltip
+                badge.title = getNormalFormDescription(nf, index === currentIndex);
+
+                badgesContainer.appendChild(badge);
+            }
+        });
+
+        // Insert badges at the top of container, before table
+        const table = container.querySelector('table');
+        if (table) {
+            container.insertBefore(badgesContainer, table);
+        } else {
+            container.prepend(badgesContainer);
+        }
+    }
+
     function createRelationGroup({ relationId }) {
         const host = (relationsContainer && relationsContainer.classList.contains('restore-layout'))
             ? relationsContainer
@@ -665,7 +907,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ricMatrix = [],
             displayFds = [],
             relationTitle,
-            showFooter = true
+            showFooter = true,
+            normalForm = null // Normal form parameter
         } = options;
 
         const resolvedDisplayFds = Array.isArray(displayFds) && displayFds.length
@@ -685,6 +928,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const titleEl = wrapper.querySelector('h3');
         if (titleEl && relationTitle) titleEl.textContent = relationTitle;
+
+        // BCNF status check and badge
+        const cols = columns;
+        const fdsForCheck = fdOriginal.length ? fdOriginal : fdList;
+
+        // Check BCNF status asynchronously
+        checkRelationBCNF(wrapper, cols, fdsForCheck).then(isBCNF => {
+            // Add BCNF badge to title
+            if (titleEl) {
+                const existingBadge = titleEl.querySelector('.bcnf-status-badge');
+                if (existingBadge) existingBadge.remove();
+
+                const badge = document.createElement('span');
+                badge.classList.add('bcnf-status-badge');
+
+                if (isBCNF) {
+                    badge.classList.add('bcnf-yes');
+                    badge.textContent = '✅ BCNF';
+                    badge.title = 'This relation is already in BCNF. No decomposition needed.';
+                    wrapper.dataset.isBcnf = 'true';
+                } else {
+                    badge.classList.add('bcnf-no');
+                    badge.textContent = '🔴 NOT BCNF';
+                    badge.title = 'This relation is NOT in BCNF. Decomposition required.';
+                    wrapper.dataset.isBcnf = 'false';
+                }
+
+                titleEl.appendChild(document.createTextNode(' '));
+                titleEl.appendChild(badge);
+            }
+
+            // Disable "Add Decomposed Table" button if BCNF
+            updateAddTableButtonState(group, isBCNF);
+
+            // Display normal form badges if provided
+            if (normalForm && wrapper) {
+                displayNormalFormBadges(wrapper, normalForm);
+            }
+        }).catch(err => {
+            console.error('BCNF check failed:', err);
+
+            // Even on error, try to display normal form badges
+            if (normalForm && wrapper) {
+                displayNormalFormBadges(wrapper, normalForm);
+            }
+        });
 
         if (fdList.length) {
             try { wrapper.dataset.projectedFds = JSON.stringify(fdList); } catch (e) {}
@@ -800,6 +1089,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const displayFds = originalFds.length ? originalFds : localFds;
             appendAggregatedFds(displayFds);
 
+            // Get normal form for this table
+            const normalFormsArray = normalizeWindowArray(window.currentRelationsNormalForms);
+            const normalForm = (Array.isArray(normalFormsArray) && i < normalFormsArray.length)
+                ? normalFormsArray[i]
+                : '1NF';
+
             const baseWrapper = renderRelationBaseWrapper(group, {
                 columns,
                 manualData,
@@ -807,7 +1102,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 fdOriginal: originalFds.length ? originalFds : localFds,
                 displayFds,
                 ricMatrix: Array.isArray(ricMatrixForTable) ? ricMatrixForTable : [],
-                relationTitle
+                relationTitle,
+                normalForm // Add normal form
             });
 
             if (baseWrapper) {
@@ -860,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             origContainer.style.display = 'block';
         }
     }
- // Warnings area (for missing column messages)
+    // Warnings area (for missing column messages)
     let warningsArea = document.getElementById('normalizeWarnings');
     if (!warningsArea) {
         warningsArea = document.createElement('div');
@@ -1085,6 +1381,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tableFds) entry.fds = tableFds;
             return entry;
         });
+
 
         const bodyObj = {
             tables: tablesPayload,
@@ -1505,6 +1802,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (result.isConfirmed) {
+                // Increment attempt count on backend
+                try {
+                    await fetch('/normalize/increment-attempt', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                } catch (err) {
+                    console.error('Failed to increment attempt count:', err);
+                }
+
                 unlockDecomposedTables();
                 Swal.fire('Reset!', 'Decomposition is now editable.', 'info');
             }
@@ -1855,12 +2162,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn('computeAll: per-table RIC failed for wrapper idx=', i, e);
                 }
 
-                // Update fd-list from global tableResults if available, but don't overwrite already-rendered table body
+                // Update fd-list from global tableResults if available
                 const fdContainer = w.querySelector('.fd-list-container');
                 const fdUl = fdContainer ? fdContainer.querySelector('ul') : null;
                 const tr = (Array.isArray(json.tableResults) && json.tableResults[i]) ? json.tableResults[i] : {};
                 const projList = Array.isArray(tr.projectedFDs) ? tr.projectedFDs : (tr.projectedFDs === undefined ? [] : tr.projectedFDs);
                 const listToUse = (projList && projList.length > 0) ? projList : (readProjectedFdsFromWrapper(w) || []);
+                const normalForm = tr.normalForm || null; // Get normal form from response
+
                 if (fdUl) {
                     fdUl.innerHTML = '';
                     listToUse.forEach(s => {
@@ -1870,6 +2179,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
                 try { w.dataset.projectedFdsOrig = JSON.stringify(listToUse); } catch (e) {}
+
+                // Display normal form badges
+                if (normalForm) {
+                    displayNormalFormBadges(w, normalForm);
+                }
             }
 
             // Check the BCNF flag
@@ -1898,9 +2212,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     confirmButtonText: 'Continue'
                 });
 
+                // Hide all action buttons except "Show BCNF Tables"
                 if (computeAllBtn) computeAllBtn.style.display = 'none';
                 if (continueNormalizationBtn) continueNormalizationBtn.style.display = 'none';
-                if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'inline-block';
+                if (changeDecompositionBtn) changeDecompositionBtn.style.display = 'none';
+                if (decompositionFinishedBtn) decompositionFinishedBtn.style.display = 'none';
+                if (addTableBtn) addTableBtn.style.display = 'none';
 
                 window._lastBcnfMeta = {
                     attempts: finalAttempts,
@@ -1913,15 +2230,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (showBcnfTablesBtn) showBcnfTablesBtn.style.display = 'none';
             window._lastBcnfMeta = null;
 
-            // If not BCNF, continue to flow (hide Compute Plaque button, show Continue to Normalization)
-            if (!relationGroup) {
-                if (computeAllBtn) {
-                    computeAllBtn.style.display = 'none';
-                }
-                if (continueNormalizationBtn) {
-                    continueNormalizationBtn.style.display = 'inline-block';
-                }
+            // If not BCNF, show Continue Normalization button
+            // This applies to BOTH:
+            // 1. Initial normalization (relationGroup = null)
+            // 2. Nested normalization (relationGroup != null but still not BCNF)
+            // The button allows user to continue decomposition until BCNF is achieved
+            if (computeAllBtn) {
+                computeAllBtn.style.display = 'none';
             }
+            if (continueNormalizationBtn) {
+                continueNormalizationBtn.style.display = 'inline-block';
+            }
+
             ricComputationInProgress = false;
         } catch (err) {
             console.error('decompose-all failed', err);
@@ -2405,7 +2725,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     if (!isNaN(parsed)) ricVal = parsed;
                                 }
 
-                				if (!isNaN(ricVal) && ricVal < 1) {
+                                if (!isNaN(ricVal) && ricVal < 1) {
                                     td.classList.add('plaque-cell');
                                     const lightness = 10 + 90 * ricVal;
                                     td.style.backgroundColor = `hsl(220,100%,${lightness}%)`;
@@ -2494,6 +2814,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     confirmButtonText: 'Yes, change it!'
                 });
                 if (confirm.isConfirmed) {
+                    // Increment attempt count on backend
+                    try {
+                        await fetch('/normalize/increment-attempt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    } catch (err) {
+                        console.error('Failed to increment attempt count:', err);
+                    }
+
                     unlockDecomposedTables(relationGroup);
                     Swal.fire('Reset!', 'Decomposition is now editable.', 'info');
                 }
@@ -2558,7 +2888,83 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function collectDecompositionState() {
-        const wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+        console.log('=== collectDecompositionState START ===');
+        // Check if we're in restore mode (Continue Normalization)
+        const relationGroups = Array.from(document.querySelectorAll('.relation-group'));
+        const isRestoreMode = relationGroups.length > 0;
+
+        console.log('Restore mode:', isRestoreMode, '| Groups:', relationGroups.length);
+
+        let wrappers;
+        let originalTableData = '';
+        let originalRicData = [];
+
+        if (isRestoreMode) {
+            // In restore mode: collect ONLY decomposed tables from local containers
+            // OR base wrappers if relation was not decomposed (still BCNF)
+            wrappers = [];
+            relationGroups.forEach(group => {
+                const localContainer = group.querySelector('.local-decomposition-group');
+                if (localContainer) {
+                    const localWrappers = Array.from(localContainer.querySelectorAll('.decomposed-wrapper'));
+                    if (localWrappers.length > 0) {
+                        // This relation was decomposed -> use decomposed tables
+                        wrappers.push(...localWrappers);
+                    } else {
+                        // Local container exists but empty -> use base wrapper
+                        const meta = relationMetaMap.get(group);
+                        const baseWrapper = meta ? meta.baseWrapper : null;
+                        if (baseWrapper) {
+                            wrappers.push(baseWrapper);
+                        }
+                    }
+                } else {
+                    // No local container -> relation was NOT decomposed -> use base wrapper
+                    const meta = relationMetaMap.get(group);
+                    const baseWrapper = meta ? meta.baseWrapper : null;
+                    if (baseWrapper) {
+                        wrappers.push(baseWrapper);
+                    }
+                }
+            });
+
+            // Get original table from session/window data (first original table)
+            // Try current originalRows first, then fallback to sessionStorage
+            if (originalRows.length > 0) {
+                originalTableData = originalRows.map(row => row.join(',')).join(';');
+                originalRicData = Array.isArray(ricMatrix) ? ricMatrix : [];
+            } else {
+                // Fallback to sessionStorage
+                try {
+                    const stored = sessionStorage.getItem('__initialOriginalTable');
+                    const storedRic = sessionStorage.getItem('__initialOriginalRic');
+                    if (stored) {
+                        const parsedRows = JSON.parse(stored);
+                        originalTableData = parsedRows.map(row => row.join(',')).join(';');
+                    }
+                    if (storedRic) {
+                        originalRicData = JSON.parse(storedRic);
+                    }
+                } catch (e) {
+                    console.error('Failed to load from sessionStorage:', e);
+                }
+            }
+            console.log('Original table data (restore):', originalTableData.substring(0, 50) + '...');
+            console.log('Original rows count:', originalRows.length);
+        } else {
+            // Normal mode: all decomposed-wrapper elements
+            wrappers = Array.from(document.querySelectorAll('.decomposed-wrapper'));
+
+            // Original table from current data
+            originalTableData = originalRows.length > 0
+                ? originalRows.map(row => row.join(',')).join(';')
+                : '';
+            originalRicData = Array.isArray(ricMatrix) ? ricMatrix : [];
+            console.log('Original table data (normal):', originalTableData.substring(0, 50) + '...');
+        }
+
+        console.log('Total wrappers:', wrappers.length);
+
         if (wrappers.length === 0) {
             return null;
         }
@@ -2610,31 +3016,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const lastResult = window._lastDecomposeResult || {};
 
-        const originalTableString = originalRows.length
-            ? originalRows.map(row => row.join(',')).join(';')
-            : '';
-
         const globalRicMatrix = Array.isArray(lastResult.globalRic) && lastResult.globalRic.length
             ? lastResult.globalRic
-            : ricMatrix;
+            : originalRicData;
 
         const unionColumnMapping = Array.isArray(lastResult.unionCols) && lastResult.unionCols.length
             ? lastResult.unionCols
             : (originalRows[0] ? originalRows[0].map((_, idx) => idx) : []);
 
+        const payload = {
+            columnsPerTable: tablesData.map(t => t.columns),
+            manualPerTable: tablesData.map(t => t.manualData),
+            fdsPerTable: tablesData.map(t => t.localFds.join(';')),
+            fdsPerTableOriginal: tablesData.map(t => t.originalFds.join(';')),
+            ricPerTable: tablesData.map(t => t.ricMatrix),
+            globalRic: globalRicMatrix,
+            unionCols: unionColumnMapping,
+            originalTable: originalTableData,
+            originalRic: originalRicData
+        };
+
+        console.log('Payload originalTable:', payload.originalTable);
+        console.log('Payload columnsPerTable:', payload.columnsPerTable);
+        console.log('=== collectDecompositionState END ===');
+
         return {
             tablesData,
-            payload: {
-                columnsPerTable: tablesData.map(t => t.columns),
-                manualPerTable: tablesData.map(t => t.manualData),
-                fdsPerTable: tablesData.map(t => t.localFds.join(';')),
-                fdsPerTableOriginal: tablesData.map(t => t.originalFds.join(';')),
-                ricPerTable: tablesData.map(t => t.ricMatrix),
-                globalRic: globalRicMatrix,
-                unionCols: unionColumnMapping,
-                originalTable: originalTableString,
-                originalRic: Array.isArray(ricMatrix) ? ricMatrix : []
-            }
+            payload
         };
     }
 

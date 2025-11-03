@@ -145,26 +145,8 @@ public class ComputeController {
 
 	// Convert (and parsing) a string like "A->B;C->D;E->F,G" to List<FD>
 	private List<FD> parseFdsString(String fds) {
-		if (fds == null || fds.isBlank()) {
-			return Collections.emptyList();
-		}
-		List<FD> result = new ArrayList<>();
-		for (String part : fds.split(";")) {
-			String[] sides = part.split("->");
-			if (sides.length != 2) continue;
-			Set<String> lhs = Arrays.stream(sides[0].split(","))
-					.map(String::trim)
-					.filter(s -> !s.isEmpty())
-					.collect(Collectors.toSet());
-			Set<String> rhs = Arrays.stream(sides[1].split(","))
-					.map(String::trim)
-					.filter(s -> !s.isEmpty())
-					.collect(Collectors.toSet());
-			if (!lhs.isEmpty() && !rhs.isEmpty()) {
-				result.add(new FD(lhs, rhs));
-			}
-		}
-		return result;
+		// Delegate to FDService
+		return fdService.parseFDString(fds);
 	}
 
 	private String sanitizeManualData(String manualData) {
