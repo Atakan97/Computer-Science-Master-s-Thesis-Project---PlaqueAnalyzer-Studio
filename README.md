@@ -2,7 +2,7 @@
 
 ## PlaqueAnalzyer Studio App
 
-A web application for displaying relational information content(plaque) and processing with normalization steps.  
+A web application for displaying relational information content (which denoted as "plaque") and processing with database schema normalization steps.  
 The app is implemented with **Spring Boot** and **Maven**, and relies on the  
 [`relational_information_content`](https://github.com/sdbs-uni-p/relational_information_content) tool (included as an external JAR in `libs/`).
 
@@ -133,3 +133,4 @@ The app is implemented with **Spring Boot** and **Maven**, and relies on the
 
 
    In order to run the app, please go to the http://localhost:8080.
+
